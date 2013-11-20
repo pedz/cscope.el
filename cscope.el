@@ -31,7 +31,7 @@
 ;; bind the above functions to your favorite key sequence.
 ;;
 
-(require 'v3-file)
+;; Remove the old version 3 build stuff
 (require 'ptags)
 
 (defvar cscope-out-buffer nil
@@ -532,16 +532,9 @@ spot"
       (set-buffer cscope-out-buffer)
     (error 
      (let* ((old-buf (current-buffer))
-	    (rel-name (v3-clone-relative-path default-directory))
-	    (def-dir (if rel-name
-			 (concat (car v3-clone-list) "/" rel-name)
-		       default-directory))
 	    (dir-temp (expand-file-name
 		       (read-file-name "Dir with cscope file "
-				       def-dir def-dir t)))
-	    ;;(clone-temp (expand-file-name
-			 ;;(read-file-name "Dir for top of clone tree "
-					 ;;def-dir def-dir t)))
+				       default-directory default-directory t)))
 	    (clone-temp dir-temp)
 	    (full-name (concat dir-temp "CSCOPE" dbname))
 	    (buf-name (concat "cscope:" dbname " " (file-name-nondirectory
@@ -581,7 +574,7 @@ spot"
 	  (set-process-query-on-exit-flag
 	   (setq cscope-process (start-process "cscope" cscope-out-buffer
 					       cscope-program-name
-					       (or v3-setup-level "")
+					       ""
 					       cscope-clone-dir
 					       "-f" cscope-out)) nil)
 	  (cscope-wait)
