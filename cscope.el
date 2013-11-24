@@ -33,6 +33,7 @@
 
 ;; Remove the old version 3 build stuff
 (require 'ptags)
+(require 'inherit)
 
 (defvar cscope-out-buffer nil
   "Buffer associated with the cscope process")
