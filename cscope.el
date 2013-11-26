@@ -211,16 +211,12 @@ spot"
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix520"
 			  "/520_SERVICE" ))
-;;;###autoload
-(defalias 'cscope-5200-00 'cscope-520-process)
 
 ;;;###autoload
 (defun cscope-52B-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix52B"
 			  "/52B_SERVICE" ))
-;;;###autoload
-(defalias 'cscope-5200-01 'cscope-52B-process)
 
 ;;;###autoload
 (defun cscope-52F-process ( )
@@ -238,194 +234,144 @@ spot"
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix52I"
 			  "/52I_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-5200-05 'cscope-52I-process)
-;;;###autoload
-(defalias 'cscope-5200-06 'cscope-52I-process)
 
 ;;;###autoload
 (defun cscope-52L-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix52L"
 			  "/52L_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-5200-07 'cscope-52L-process)
 
 ;;;###autoload
 (defun cscope-52M-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix52M"
 			  "/52M_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-5200-08 'cscope-52M-process)
 
 ;;;###autoload
 (defun cscope-52Q-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix52Q"
 			  "/52Q_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-5200-09 'cscope-52Q-process)
 
 ;;;###autoload
 (defun cscope-52S-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix52S"
 			  "/52S_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-5200-10 'cscope-52S-process)
 
 ;;;###autoload
 (defun cscope-530-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix530"
 			  "/530_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-5300-00 'cscope-530-process)
 
 ;;;###autoload
 (defun cscope-53A-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53A"
 			  "/53A_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-5300-01 'cscope-53A-process)
 
 ;;;###autoload
 (defun cscope-53D-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53D"
 			  "/53D_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-5300-03 'cscope-53D-process)
 
 ;;;###autoload
 (defun cscope-53E-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53E"
 			  "/53E_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-5300-04 'cscope-53E-process)
 
 ;;;###autoload
 (defun cscope-53H-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53H"
 			  "/53H_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-5300-05 'cscope-53H-process)
 
 ;;;###autoload
 (defun cscope-53J-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53J"
 			  "/53J_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-5300-06 'cscope-53J-process)
 
 ;;;###autoload
 (defun cscope-53L-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53L"
 			  "/53L_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-5300-07 'cscope-53L-process)
 
 ;;;###autoload
 (defun cscope-53N-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53N"
 			  "/53N_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-5300-08 'cscope-53N-process)
 
 ;;;###autoload
 (defun cscope-53Q-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53Q"
 			  "/53Q_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-5300-09 'cscope-53Q-process)
 
 ;;;###autoload
 (defun cscope-53S-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53S"
 			  "/53S_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-5300-10 'cscope-53S-process)
 
 ;;;###autoload
 (defun cscope-53V-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53V"
 			  "/53V_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-5300-11 'cscope-53V-process)
 
 ;;;###autoload
 (defun cscope-53X-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53X"
 			  "/53X_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-5300-12 'cscope-53X-process)
 
 ;;;###autoload
 (defun cscope-610-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix610"
 			  "/610_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-6100-00 'cscope-610-process)
 
 ;;;###autoload
 (defun cscope-61B-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61B"
 			  "/61B_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-6100-01 'cscope-61B-process)
 
 ;;;###autoload
 (defun cscope-61D-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61D"
 			  "/61D_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-6100-02 'cscope-61D-process)
 
 ;;;###autoload
 (defun cscope-61F-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61F"
 			  "/61F_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-6100-03 'cscope-61F-process)
 
 ;;;###autoload
 (defun cscope-61H-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61H"
 			  "/61H_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-6100-04 'cscope-61H-process)
 
 ;;;###autoload
 (defun cscope-61J-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61J"
 			  "/61J_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-6100-05 'cscope-61J-process)
 
 ;;;###autoload
 (defun cscope-61L-process ( )
   (interactive)
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61L"
 			  "/61L_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-6100-06 'cscope-61L-process)
 
 ;;;###autoload
 (defun cscope-61N-process ( )
@@ -439,9 +385,12 @@ spot"
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61Q"
 			  "/61Q_COMPLETE" ))
 
-;;;###autoload
-(defalias 'cscope-6100-07 'cscope-61S-process)
 
+;;;###autoload
+(defun cscope-61S-process ( )
+  (interactive)
+  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61S"
+                          "/61S_COMPLETE" ))
 ;;;###autoload
 (defun cscope-61V-process ( )
   (interactive)
@@ -455,12 +404,10 @@ spot"
 			  "/61X_COMPLETE" ))
 
 ;;;###autoload
-(defun cscope-61S-process ( )
+(defun cscope-61Y-process ( )
   (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61S"
-                          "/61S_COMPLETE" ))
-;;;###autoload
-(defalias 'cscope-6100-07-04 'cscope-61S-process)
+  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61Y"
+			  "/61Y_COMPLETE" ))
 
 ;;;###autoload
 (defun cscope-710-process ( )
@@ -488,10 +435,15 @@ spot"
   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix71H"
                           "/71H_COMPLETE" ))
 ;;;###autoload
-(defalias 'cscope-7100-00 'cscope-71B-process)
-
+(defun cscope-71J-process ( )
+  (interactive)
+  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix71J"
+                          "/71J_COMPLETE" ))
 ;;;###autoload
-(defalias 'cscope-7100-01 'cscope-71D-process)
+(defun cscope-71L-process ( )
+  (interactive)
+  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix71L"
+                          "/71L_COMPLETE" ))
 
 ;;;###autoload
 (defun cscope-ipf-process ( )
@@ -740,5 +692,234 @@ and puts the buffer into cscope-mode"
 (defun x-cscope-no-op ( click )
   "Function which does nothing"
   (interactive "e"))
+
+;;; From backing list
+;;; \(^.*\)/aix\(...\)/\(5200\|5300\|6100\|7100\)\(-[0-9][0-9]\)\(-[0-9][0-9]\)?\(Gold\|_SP\)
+;;; (defalias 'cscope-\3\4\5 'cscope-\2-process)
+
+(defalias 'cscope-5200-06 'cscope-52I-process)
+(defalias 'cscope-5200-07 'cscope-52L-process)
+(defalias 'cscope-5200-08 'cscope-52M-process)
+(defalias 'cscope-5200-09-01 'cscope-52Q-process)
+(defalias 'cscope-5200-09-02 'cscope-52Q-process)
+(defalias 'cscope-5200-09-03 'cscope-52Q-process)
+(defalias 'cscope-5200-09-04 'cscope-52Q-process)
+(defalias 'cscope-5200-09-05 'cscope-52Q-process)
+(defalias 'cscope-5200-09-06 'cscope-52Q-process)
+(defalias 'cscope-5200-09 'cscope-52Q-process)
+(defalias 'cscope-5200-10-01 'cscope-52S-process)
+(defalias 'cscope-5200-10-02 'cscope-52S-process)
+(defalias 'cscope-5200-10-03 'cscope-52S-process)
+(defalias 'cscope-5200-10-04 'cscope-52S-process)
+(defalias 'cscope-5200-10-05 'cscope-52S-process)
+(defalias 'cscope-5200-10-06 'cscope-52S-process)
+(defalias 'cscope-5200-10-07 'cscope-52S-process)
+(defalias 'cscope-5200-10-08 'cscope-52S-process)
+(defalias 'cscope-5200-10 'cscope-52S-process)
+(defalias 'cscope-5300-02 'cscope-53A-process)
+(defalias 'cscope-5300-03 'cscope-53D-process)
+(defalias 'cscope-5300-04 'cscope-53E-process)
+(defalias 'cscope-5300-05-01 'cscope-53H-process)
+(defalias 'cscope-5300-05-02 'cscope-53H-process)
+(defalias 'cscope-5300-05-03 'cscope-53H-process)
+(defalias 'cscope-5300-05-04 'cscope-53H-process)
+(defalias 'cscope-5300-05-05 'cscope-53H-process)
+(defalias 'cscope-5300-05-06 'cscope-53H-process)
+(defalias 'cscope-5300-05 'cscope-53H-process)
+(defalias 'cscope-5300-06-01 'cscope-53J-process)
+(defalias 'cscope-5300-06-02 'cscope-53J-process)
+(defalias 'cscope-5300-06-03 'cscope-53J-process)
+(defalias 'cscope-5300-06-04 'cscope-53J-process)
+(defalias 'cscope-5300-06-05 'cscope-53J-process)
+(defalias 'cscope-5300-06-06 'cscope-53J-process)
+(defalias 'cscope-5300-06-07 'cscope-53J-process)
+(defalias 'cscope-5300-06-08 'cscope-53J-process)
+(defalias 'cscope-5300-06-09 'cscope-53J-process)
+(defalias 'cscope-5300-06-10 'cscope-53J-process)
+(defalias 'cscope-5300-06-11 'cscope-53J-process)
+(defalias 'cscope-5300-06-12 'cscope-53J-process)
+(defalias 'cscope-5300-06 'cscope-53J-process)
+(defalias 'cscope-5300-07-01 'cscope-53L-process)
+(defalias 'cscope-5300-07-02 'cscope-53L-process)
+(defalias 'cscope-5300-07-03 'cscope-53L-process)
+(defalias 'cscope-5300-07-04 'cscope-53L-process)
+(defalias 'cscope-5300-07-05 'cscope-53L-process)
+(defalias 'cscope-5300-07-06 'cscope-53L-process)
+(defalias 'cscope-5300-07-07 'cscope-53L-process)
+(defalias 'cscope-5300-07-08 'cscope-53L-process)
+(defalias 'cscope-5300-07-09 'cscope-53L-process)
+(defalias 'cscope-5300-07-10 'cscope-53L-process)
+(defalias 'cscope-5300-07 'cscope-53L-process)
+(defalias 'cscope-5300-08-01 'cscope-53N-process)
+(defalias 'cscope-5300-08-02 'cscope-53N-process)
+(defalias 'cscope-5300-08-03 'cscope-53N-process)
+(defalias 'cscope-5300-08-04 'cscope-53N-process)
+(defalias 'cscope-5300-08-05 'cscope-53N-process)
+(defalias 'cscope-5300-08-06 'cscope-53N-process)
+(defalias 'cscope-5300-08-07 'cscope-53N-process)
+(defalias 'cscope-5300-08-08 'cscope-53N-process)
+(defalias 'cscope-5300-08-09 'cscope-53N-process)
+(defalias 'cscope-5300-08-10 'cscope-53N-process)
+(defalias 'cscope-5300-08 'cscope-53N-process)
+(defalias 'cscope-5300-09-01 'cscope-53Q-process)
+(defalias 'cscope-5300-09-02 'cscope-53Q-process)
+(defalias 'cscope-5300-09-03 'cscope-53Q-process)
+(defalias 'cscope-5300-09-04 'cscope-53Q-process)
+(defalias 'cscope-5300-09-05 'cscope-53Q-process)
+(defalias 'cscope-5300-09-06 'cscope-53Q-process)
+(defalias 'cscope-5300-09-07 'cscope-53Q-process)
+(defalias 'cscope-5300-09-08 'cscope-53Q-process)
+(defalias 'cscope-5300-09 'cscope-53Q-process)
+(defalias 'cscope-5300-10-01 'cscope-53S-process)
+(defalias 'cscope-5300-10-02 'cscope-53S-process)
+(defalias 'cscope-5300-10-03 'cscope-53S-process)
+(defalias 'cscope-5300-10-04 'cscope-53S-process)
+(defalias 'cscope-5300-10-05 'cscope-53S-process)
+(defalias 'cscope-5300-10-06 'cscope-53S-process)
+(defalias 'cscope-5300-10-07 'cscope-53S-process)
+(defalias 'cscope-5300-10 'cscope-53S-process)
+(defalias 'cscope-5300-11-01 'cscope-53V-process)
+(defalias 'cscope-5300-11-02 'cscope-53V-process)
+(defalias 'cscope-5300-11-03 'cscope-53V-process)
+(defalias 'cscope-5300-11-04 'cscope-53V-process)
+(defalias 'cscope-5300-11-05 'cscope-53V-process)
+(defalias 'cscope-5300-11-06 'cscope-53V-process)
+(defalias 'cscope-5300-11-07 'cscope-53V-process)
+(defalias 'cscope-5300-11-08 'cscope-53V-process)
+(defalias 'cscope-5300-11 'cscope-53V-process)
+(defalias 'cscope-5300-12-01 'cscope-53X-process)
+(defalias 'cscope-5300-12-02 'cscope-53X-process)
+(defalias 'cscope-5300-12-03 'cscope-53X-process)
+(defalias 'cscope-5300-12-04 'cscope-53X-process)
+(defalias 'cscope-5300-12-05 'cscope-53X-process)
+(defalias 'cscope-5300-12-06 'cscope-53X-process)
+(defalias 'cscope-5300-12-07 'cscope-53X-process)
+(defalias 'cscope-5300-12-08 'cscope-53X-process)
+(defalias 'cscope-5300-12 'cscope-53X-process)
+(defalias 'cscope-6100-00-01 'cscope-540-process)
+(defalias 'cscope-6100-00-02 'cscope-540-process)
+(defalias 'cscope-6100-00-03 'cscope-540-process)
+(defalias 'cscope-6100-00-04 'cscope-540-process)
+(defalias 'cscope-6100-00-05 'cscope-540-process)
+(defalias 'cscope-6100-00-06 'cscope-540-process)
+(defalias 'cscope-6100-00-07 'cscope-540-process)
+(defalias 'cscope-6100-00-08 'cscope-540-process)
+(defalias 'cscope-6100-00-09 'cscope-540-process)
+(defalias 'cscope-6100-00-10 'cscope-540-process)
+(defalias 'cscope-6100-00-11 'cscope-540-process)
+(defalias 'cscope-6100-00-01 'cscope-610-process)
+(defalias 'cscope-6100-00-02 'cscope-610-process)
+(defalias 'cscope-6100-00-03 'cscope-610-process)
+(defalias 'cscope-6100-00-04 'cscope-610-process)
+(defalias 'cscope-6100-00-05 'cscope-610-process)
+(defalias 'cscope-6100-00-06 'cscope-610-process)
+(defalias 'cscope-6100-00-07 'cscope-610-process)
+(defalias 'cscope-6100-00-08 'cscope-610-process)
+(defalias 'cscope-6100-00-09 'cscope-610-process)
+(defalias 'cscope-6100-00-10 'cscope-610-process)
+(defalias 'cscope-6100-00-11 'cscope-610-process)
+(defalias 'cscope-6100-01-01 'cscope-61B-process)
+(defalias 'cscope-6100-01-02 'cscope-61B-process)
+(defalias 'cscope-6100-01-03 'cscope-61B-process)
+(defalias 'cscope-6100-01-04 'cscope-61B-process)
+(defalias 'cscope-6100-01-05 'cscope-61B-process)
+(defalias 'cscope-6100-01-06 'cscope-61B-process)
+(defalias 'cscope-6100-01-07 'cscope-61B-process)
+(defalias 'cscope-6100-01-08 'cscope-61B-process)
+(defalias 'cscope-6100-01-09 'cscope-61B-process)
+(defalias 'cscope-6100-01 'cscope-61B-process)
+(defalias 'cscope-6100-02-01 'cscope-61D-process)
+(defalias 'cscope-6100-02-02 'cscope-61D-process)
+(defalias 'cscope-6100-02-03 'cscope-61D-process)
+(defalias 'cscope-6100-02-04 'cscope-61D-process)
+(defalias 'cscope-6100-02-05 'cscope-61D-process)
+(defalias 'cscope-6100-02-06 'cscope-61D-process)
+(defalias 'cscope-6100-02-07 'cscope-61D-process)
+(defalias 'cscope-6100-02-08 'cscope-61D-process)
+(defalias 'cscope-6100-02-09 'cscope-61D-process)
+(defalias 'cscope-6100-02-10 'cscope-61D-process)
+(defalias 'cscope-6100-02 'cscope-61D-process)
+(defalias 'cscope-6100-03-01 'cscope-61F-process)
+(defalias 'cscope-6100-03-02 'cscope-61F-process)
+(defalias 'cscope-6100-03-03 'cscope-61F-process)
+(defalias 'cscope-6100-03-04 'cscope-61F-process)
+(defalias 'cscope-6100-03-05 'cscope-61F-process)
+(defalias 'cscope-6100-03-06 'cscope-61F-process)
+(defalias 'cscope-6100-03-07 'cscope-61F-process)
+(defalias 'cscope-6100-03-08 'cscope-61F-process)
+(defalias 'cscope-6100-03-09 'cscope-61F-process)
+(defalias 'cscope-6100-03-10 'cscope-61F-process)
+(defalias 'cscope-6100-03 'cscope-61F-process)
+(defalias 'cscope-6100-04-01 'cscope-61H-process)
+(defalias 'cscope-6100-04-02 'cscope-61H-process)
+(defalias 'cscope-6100-04-03 'cscope-61H-process)
+(defalias 'cscope-6100-04-04 'cscope-61H-process)
+(defalias 'cscope-6100-04-05 'cscope-61H-process)
+(defalias 'cscope-6100-04-06 'cscope-61H-process)
+(defalias 'cscope-6100-04-07 'cscope-61H-process)
+(defalias 'cscope-6100-04-08 'cscope-61H-process)
+(defalias 'cscope-6100-04-09 'cscope-61H-process)
+(defalias 'cscope-6100-04-10 'cscope-61H-process)
+(defalias 'cscope-6100-04-11 'cscope-61H-process)
+(defalias 'cscope-6100-04 'cscope-61H-process)
+(defalias 'cscope-6100-05-01 'cscope-61J-process)
+(defalias 'cscope-6100-05-02 'cscope-61J-process)
+(defalias 'cscope-6100-05-03 'cscope-61J-process)
+(defalias 'cscope-6100-05-04 'cscope-61J-process)
+(defalias 'cscope-6100-05-05 'cscope-61J-process)
+(defalias 'cscope-6100-05-06 'cscope-61J-process)
+(defalias 'cscope-6100-05-07 'cscope-61J-process)
+(defalias 'cscope-6100-05-08 'cscope-61J-process)
+(defalias 'cscope-6100-05-09 'cscope-61J-process)
+(defalias 'cscope-6100-05 'cscope-61J-process)
+(defalias 'cscope-6100-06-01 'cscope-61L-process)
+(defalias 'cscope-6100-06-02 'cscope-61L-process)
+(defalias 'cscope-6100-06-03 'cscope-61L-process)
+(defalias 'cscope-6100-06-04 'cscope-61L-process)
+(defalias 'cscope-6100-06 'cscope-61L-process)
+(defalias 'cscope-6100-06-05 'cscope-61N-process)
+(defalias 'cscope-6100-06-06 'cscope-61N-process)
+(defalias 'cscope-6100-06-07 'cscope-61N-process)
+(defalias 'cscope-6100-06-08 'cscope-61N-process)
+(defalias 'cscope-6100-06-09 'cscope-61N-process)
+(defalias 'cscope-6100-06-10 'cscope-61N-process)
+(defalias 'cscope-6100-06-11 'cscope-61N-process)
+(defalias 'cscope-6100-06-12 'cscope-61N-process)
+(defalias 'cscope-6100-07-01 'cscope-61Q-process)
+(defalias 'cscope-6100-07-02 'cscope-61Q-process)
+(defalias 'cscope-6100-07-03 'cscope-61Q-process)
+(defalias 'cscope-6100-07 'cscope-61Q-process)
+(defalias 'cscope-6100-07-04 'cscope-61S-process)
+(defalias 'cscope-6100-07-05 'cscope-61S-process)
+(defalias 'cscope-6100-07-06 'cscope-61S-process)
+(defalias 'cscope-6100-07-07 'cscope-61S-process)
+(defalias 'cscope-6100-07-08 'cscope-61S-process)
+(defalias 'cscope-6100-08-01 'cscope-61V-process)
+(defalias 'cscope-6100-08 'cscope-61V-process)
+(defalias 'cscope-6100-08-02 'cscope-61X-process)
+(defalias 'cscope-6100-08-03 'cscope-61X-process)
+(defalias 'cscope-7100-00-01 'cscope-710-process)
+(defalias 'cscope-7100-00-02 'cscope-710-process)
+(defalias 'cscope-7100-00-03 'cscope-71B-process)
+(defalias 'cscope-7100-00-04 'cscope-71B-process)
+(defalias 'cscope-7100-00-05 'cscope-71B-process)
+(defalias 'cscope-7100-00-06 'cscope-71B-process)
+(defalias 'cscope-7100-00-07 'cscope-71B-process)
+(defalias 'cscope-7100-00-08 'cscope-71B-process)
+(defalias 'cscope-7100-00-09 'cscope-71B-process)
+(defalias 'cscope-7100-00-10 'cscope-71B-process)
+(defalias 'cscope-7100-01-01 'cscope-71D-process)
+(defalias 'cscope-7100-01-02 'cscope-71D-process)
+(defalias 'cscope-7100-01-03 'cscope-71D-process)
+(defalias 'cscope-7100-01 'cscope-71D-process)
+(defalias 'cscope-7100-01-04 'cscope-71F-process)
+(defalias 'cscope-7100-01-05 'cscope-71F-process)
+(defalias 'cscope-7100-01-06 'cscope-71F-process)
+(defalias 'cscope-7100-01-07 'cscope-71F-process)
+(defalias 'cscope-7100-01-08 'cscope-71F-process)
+(defalias 'cscope-7100-02-01 'cscope-71H-process)
+(defalias 'cscope-7100-02 'cscope-71H-process)
+(defalias 'cscope-7100-02-02 'cscope-71J-process)
+(defalias 'cscope-7100-02-03 'cscope-71J-process)
 
 (provide 'cscope)
