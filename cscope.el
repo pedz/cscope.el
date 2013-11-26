@@ -637,6 +637,16 @@ spot"
     (not-modified)
     return-value))
 
+(defun kill-cscope-buffers ( buf )
+  "Given a cscope buffer, kills all the buffers that have it as their
+  cscope-out-buffer."
+  (interactive "bBuffer: ")
+  (let* ((v (buffer-local-value 'cscope-out-buffer (get-buffer buf))))
+    (mapcar (lambda ( x )
+	      (if (eq v (buffer-local-value 'cscope-out-buffer x))
+		  (kill-buffer x)))
+	    (buffer-list))))
+
 ;;;###autoload
 (defun cscope-find-goodies ( string )
   "Calls the cscope program and sends it STRING, plops into the buffer
