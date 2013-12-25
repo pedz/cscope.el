@@ -33,7 +33,7 @@ mode changes and kill-all-local-variables"
 (defun kill-inherited-variables ()
   "Sets all inherited variables to nil"
   (interactive)
-  (mapcar (lambda ( v ) (set v nil)) inherited-variables))
+  (mapcar (lambda ( v ) (kill-local-variable v)) inherited-variables))
 
 (defadvice get-buffer-create (around inherit activate)
   "Propogates the inherited variables from the current buffer to the
@@ -42,9 +42,10 @@ mode changes and kill-all-local-variables"
 			     (cons v (symbol-value v)))
 			   inherited-variables)))
     ad-do-it
-    (with-current-buffer ad-return-value
-      (mapcar (lambda ( c )
-		(set (car c) (cdr c)))
-	      set-list))))
+    (if (buffer-name ad-return-value)
+	(with-current-buffer ad-return-value
+	  (mapcar (lambda ( c )
+		    (set (car c) (cdr c)))
+		  set-list)))))
 
 (provide 'inherit)

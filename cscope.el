@@ -1,59 +1,129 @@
-;;
+;;; cscope.el --- emacs interface to cscope
+
+;; This is a ground up review and rewrite of code that I originally
+;; wrote while contracting at Tandem (in Austin).
+;; Tue Dec  3 08:25:25 CST 2013
+
 ;; This was written by Perry Smith (a.k.a. pedz) at Tandem 
 ;; Thu Jul 26 10:32:36 CDT 1990
-;;
-;; This is a set of routines which uses the output of cscope to do
-;; basically the same things as cscope except you don't have to leave
-;; emacs (what a concept!)
-;;
-;; Recommended use
-;;
-;; Setup all the cscope goodies
-;;(autoload 'cscope-find-goodies "cscope"
-;;	  "Creates a cscope buffer with lines that match STRING"
-;;	  t)
-;;(autoload 'cscope-find-func "cscope"
-;;	  "Find FUNCTION declaration (or a #define) using the cscope stuff"
-;;	    t)
-;;(autoload 'cscope-find-symbol "cscope"
-;;	  "Find all references to SYMBOL"
-;;	  t)
-;;(autoload 'cscope-find-func-call "cscope"
-;;	  "Find all calls to FUNCTION"
-;;	  t)
-;;(autoload 'cscope-find-file "cscope"
-;;	  "Finds files matching PATTERN"
-;;	  t)
-;;(autoload 'cscope-find-file-include "cscope"
-;;	  "Finds files which include the file matching PATTERN"
-;;	  t)
-;;
-;; bind the above functions to your favorite key sequence.
-;;
 
-;; Remove the old version 3 build stuff
-(require 'ptags)
+;; I work in an environment that runs an old copy of cscope but other
+;; versions of cscope exist at the same time.  The environment also
+;; has pre-built databases for different cross sections of the files.
+;; Thus, the cscope database is rarely called 'cscope.out' nor is it
+;; usually at the top of the source tree.  I also work in support so I
+;; am frequently looking at different versions of the same file at the
+;; same time.  The features of this cscope.el are to address these
+;; needs.
+;; 
+;; The first feature of this cscope start with using `inherit' which
+;; is a package that introduces the concept of inherited buffer local
+;; variables see `make-variable-buffer-inherited'.  When buffer 2 is
+;; create while in buffer 1, the inherited variables of buffer 2 are
+;; initialized from the current values of buffer 1.  This provides the
+;; ability to have groups of buffers that know their ancestary which
+;; in tern allows to have multiple cscopes running at the same time
+;; and the buffers created from one cscope know to use the cscope for
+;; that buffer.  For example, a user can be looking at code in version
+;; A and version B at the same time and the cscope searches know that
+;; if searches while visiting a file from version A to use the cscope
+;; running for version A.  The hook to do this is tied in to
+;; `get-buffer-create' so a `grep' or `dired' done while visiting a
+;; file from version A still knows to go back to the cscope for
+;; version A if a subsequent search is done.
+;;
+;; The second feature is the cscope executable, the options to pass to
+;; cscope, the top level directory of where the cscope thinks it was
+;; cretaed, and the full path to the cscope database (and thus its
+;; name) are four separate values are easily set for each cscope that
+;; is started.  The user can create patterns that match the directory
+;; of the file being edited and thus determine defaults for the four
+;; values.  The user can also create functions such as "cscope-happy"
+;; that starts the cscope for the Happy project without further
+;; interaction.
+
 (require 'inherit)
+(require 'ptags)
 
+;; First the customizable group and variables
+(defgroup cscope-mode nil
+  "CScope mode"
+  :group 'languages)
+
+(defcustom cscope-dir-patterns
+  (list
+   ;; Pattern to match files found in backing trees
+   '("^\\(/gsa/.*/aix\\(53\\|61\\|71\\)./\\)[^/]*/"
+     (concat (match-string 1 default-directory) "cscope/bin/cscope") ; which cscope to use
+     "-d -q -l"							     ; options to pass
+     (match-string 0 default-directory)				     ; to level dir
+     (concat (match-string 1 default-directory) "cscope/mono.db"))   ; cscope database
+
+   ;; Pattern to match files found in a sandbox
+   '("/gsa/.*/pedzan/sb/[^/]+/"
+     (concat
+      (file-name-as-directory			;add /
+       (directory-file-name			;move up to parent
+	(file-name-directory			;remove any /
+	 (file-truename				;walk sym links
+	  (concat				;append "link" to get to backing tree
+	   (file-name-as-directory		;add / if needed
+	    (match-string 0 default-directory)) ;path to sandbox
+	   "link")))))
+      "cscope/bin/cscope")			;which cscope to use
+     "-d -q -l"					;options to pass to cscope
+     (match-string 0 default-directory)
+     (concat					;append cscope/mono.db
+      (file-name-as-directory			;add /
+       (directory-file-name			;move up to parent
+	(file-name-directory			;remove any /
+	 (file-truename				;walk sym links
+	  (concat				;append "link"
+	   (file-name-as-directory		;add / if needed
+	    (match-string 0 default-directory)) ;path to sandbox
+	   "link")))))
+      "cscope/mono.db"))
+
+   ;; Pattern that always matches
+   '("."
+     "cscope"
+     "-d -q -l"
+     (cscope-walk-tree "cscope.out")
+     (concat (cscope-walk-tree "cscope.out") "cscope.out"))
+   )
+  "A list of pattern elements.  Each pattern element is itself a
+list containing five elements ( DIRMATCH CSCOPE OPTIONS DIR DATABASE
+
+DIRMATCH is a regular expressions that is matched against the
+`default-directory' of the buffer the cscope search is attempted
+from.  The remaining four elements are lisp expressions whose values
+is used to set the value of variable `cscope-process-cscope', variable
+`cscope-process-options', variable `cscope-process-dir', and variable
+`cscope-process-database' respectively.  Note that `string-match is
+used to match DIRMATCH with the `default-directory' so `match-string'
+may be used in the lisp expressions"
+  :group 'cscope-mode
+  :type 'list)
+
+(defcustom cscope-auto-go t
+  "When only 1 cscope entry is found, emacs automatically selects that
+entry"
+  :group 'cscope-mode
+  :type 'boolean)
+
+(defcustom cscope-key-command-prefix (kbd "C-\\")
+  "The prefix for the cscope key bindings"
+  :type 'string
+  :group 'cscope-mode)
+
+;; We define one inherited variable that points back to the parent
+;; cscope buffer which will be the buffer that has the cscope running
+;; in it.
 (defvar cscope-out-buffer nil
   "Buffer associated with the cscope process")
 (make-variable-buffer-inherited 'cscope-out-buffer)
 
-(defvar cscope-start-time nil
-  "Last modification time of cscope.out file when cscope was started")
-(make-variable-buffer-local 'cscope-start-time)
-
-(defvar cscope-program-name "cscope-front"
-  "*Name of program to run for cscope stuff")
-
-(defvar cscope-auto-go t
-  "*When only 1 cscope entry is found, emacs automatically selects that
-entry")
-
-(defvar cscope-process nil
-  "Holds the process object for 'cscope'")
-(make-variable-buffer-inherited 'cscope-process)
-
+;; Other global variables
 (defvar cscope-file-vector nil
   "Holds the full path names for the files listed in the cscope output")
 (make-variable-buffer-local 'cscope-file-vector)
@@ -62,504 +132,298 @@ entry")
   "Holds the line numbers for the lines listed in the cscope output")
 (make-variable-buffer-local 'cscope-line-vector)
 
-(defvar cscope-mode-map nil "")
+(defvar cscope-mode-map 
+  (let ((map (make-sparse-keymap)))
+    (define-key map "n" 'next-line)
+    (define-key map " " 'next-line)
+    (define-key map "p" 'previous-line)
+    (define-key map "\177" 'previous-line)
+    (define-key map "v" 'cscope-view-from-list)
+    (define-key map "q" 'delete-window)
+    (define-key map "e" 'cscope-goto-from-list)
+    (define-key map [mouse-1] 'cscope-mouse-goto-from-list-other-window)
+    (define-key map [drag-mouse-1] 'cscope-mouse-no-op)
+    (define-key map [down-mouse-1] 'cscope-mouse-no-op)
+    (define-key map [mouse-2] 'cscope-mouse-goto-from-list)
+    (define-key map [drag-mouse-2] 'cscope-mouse-no-op)
+    (define-key map [down-mouse-2] 'cscope-mouse-no-op)
+    (define-key map [mouse-3] 'cscope-mouse-view-from-list)
+    (define-key map [drag-mouse-3] 'cscope-mouse-no-op)
+    (define-key map [down-mouse-3] 'cscope-mouse-no-op)
+    map)
+  "Keymap used in cscope mode.")
 
-(if cscope-mode-map
-    ()
-  (setq cscope-mode-map (make-keymap))
-  (define-key cscope-mode-map "n" 'next-line)
-  (define-key cscope-mode-map " " 'next-line)
-  (define-key cscope-mode-map "p" 'previous-line)
-  (define-key cscope-mode-map "\177" 'previous-line)
-  (define-key cscope-mode-map "v" 'cscope-view-from-list)
-  (define-key cscope-mode-map "q" 'delete-window)
-  (define-key cscope-mode-map "e" 'cscope-goto-from-list)
-  (define-key cscope-mode-map [mouse-1] 'x-cscope-goto-from-list-other-window)
-  (define-key cscope-mode-map [drag-mouse-1] 'x-cscope-no-op)
-  (define-key cscope-mode-map [down-mouse-1] 'x-cscope-no-op)
-  (define-key cscope-mode-map [mouse-2] 'x-cscope-goto-from-list)
-  (define-key cscope-mode-map [drag-mouse-2] 'x-cscope-no-op)
-  (define-key cscope-mode-map [down-mouse-2] 'x-cscope-no-op)
-  (define-key cscope-mode-map [mouse-3] 'x-cscope-view-from-list)
-  (define-key cscope-mode-map [drag-mouse-3] 'x-cscope-no-op)
-  (define-key cscope-mode-map [down-mouse-3] 'x-cscope-no-op)
-  )
+(defvar cscope-c-minor-mode-menu nil
+  "The Cscope menu")
 
-;;;###autoload
-(defun cscope-mode ()
-  "Major mode used to look at the cscope output stuff\n
-Type:
-  n to go to the next line
-  Space to go to the next line
-  p to go to the previous line
-  Rubout to go to the previous line
-  v to view the file and line
-  q to delete the cscope window
-  e to edit the file at the line
-"
-  (use-local-map cscope-mode-map)
-  (setq truncate-lines t)
-  (setq buffer-read-only t)
-  (setq major-mode 'cscope-mode)
-  (setq mode-name "C-Scope"))
+(defvar cscope-c-mode-map
+  (let* ((parent (make-sparse-keymap))
+	 (child (make-sparse-keymap)))
+    (easy-menu-define cscope-c-minor-mode-menu
+      parent
+      "Menu used when `cscope-c-mode' is active."
+      '("CScope"
+	["Find references" cscope-menu-find-references 
+	 :help "Find references to the SYMBOL at point"]
+	["Find declarations" cscope-menu-find-declarations 
+	 :help "Find declarations for the SYMBOL at point"]
+	["Find functions called" cscope-menu-find-functions-called 
+	 :help "Find functions called by SYMBOL at point"]
+	["Find calls to" cscope-menu-find-calling-functions 
+	 :help "Find calls to SYMBOL at point"]
+	["Find STRING" cscope-menu-find-string 
+	 :help "Find STRING at point"]
+	["Find rexexp" cscope-menu-find-pattern 
+	 :help "Find regular expression PATTERN at point"]
+	["Find files" cscope-menu-find-file 
+	 :help "Find files matching PATTERN at point"]
+	["Find includes" cscope-menu-find-file-include 
+	 :help "Find files which includes files matching PATTERN at point"]
+	["Find assignments" cscope-menu-find-assignment 
+	 :help "Find assignments to SYMBOL at point"]
+	"--"
+	["Find references ..." cscope-find-references 
+	 :help "Find references to the SYMBOL interactively"]
+	["Find declarations ..." cscope-find-declarations 
+	 :help "Find declarations for the SYMBOL interactively"]
+	["Find functions called ..." cscope-find-functions-called 
+	 :help "Find functions called by SYMBOL interactively"]
+	["Find calls to ..." cscope-find-calling-functions 
+	 :help "Find calls to SYMBOL interactively"]
+	["Find STRING ..." cscope-find-string 
+	 :help "Find STRING interactively"]
+	["Find regexp ..." cscope-find-pattern 
+	 :help "Find regular expression PATTERN interactively"]
+	["Find files ..." cscope-find-file 
+	 :help "Find files matching PATTERN interactively"]
+	["Find includes ..." cscope-find-file-include 
+	 :help "Find files which includes files matching PATTERN interactively"]
+	["Find assignments ..." cscope-find-assignment 
+	 :help "Find assignments to SYMBOL interactively"]
+	))
+    (define-key parent cscope-key-command-prefix child)
+    (define-key child (kbd "F") 'cscope-find-file)
+    (define-key child (kbd "c") 'cscope-find-calling-functions)
+    (define-key child (kbd "f") 'cscope-find-declarations)
+    (define-key child (kbd "i") 'cscope-find-file-include)
+    (define-key child (kbd "s") 'cscope-find-references)
+    parent)
+  "Keymap used for cscope-c minor mode")
 
-;;;###autoload
-(defun cscope-find-symbol ( string )
-  "Find all references to the SYMBOL."
-  (interactive (get-symbol-interactively "Find symbol: "))
-  (cscope-find-goodies (concat "0" string "\n")))
+;;; Define a set of variables that are local to the cscope out buffer.
+;;; Other buffers get the value by querying the value.
+(defmacro cscope-defvar (name init doc)
+  "Defines a variable via `defvar' NAME INIT DOC along with a
+getter for NAME that fetches the buffer local value from the
+buffer the function `cscope-out-buffer' returns."
+  (declare (indent defun))
+  (let ((getter-name (intern (format "get-%s" name)))
+	(getter-doc (format
+		 "Retrieves the variable `%s' from `get-cscope-out-buffer'."
+		 name))
+	(setter-doc (format
+		 "Sets the variable `%s' in buffer `get-cscope-out-buffer'."
+		 name))
+	(setter-name (intern (format "set-%s" name))))
+    `(progn
+       (defvar ,name ,init ,doc)
+       (make-variable-buffer-local ',name)
+       (defun ,getter-name ()
+	 ,getter-doc
+	 (buffer-local-value ',name (get-cscope-out-buffer)))
+       (defun ,setter-name (val)
+	 ,setter-doc
+	 (with-current-buffer (get-cscope-out-buffer)
+	   (set ',name val))))))
 
-;;;###autoload
-(defun cscope-find-func ( string )
-  "Find a function declaration (or a #define) using the cscope stuff"
-  (interactive (get-symbol-interactively "Find function: "))
-  (cscope-find-goodies (concat "1" string "\n")))
+(cscope-defvar cscope-process nil
+  "The cscope process.")
 
-;;;###autoload
-(defun cscope-find-functions-called ( string )
-  "Find all functions called by this function"
-  (interactive (get-symbol-interactively "Find calls from: "))
-  (cscope-find-goodies (concat "2" string "\n")))
+(cscope-defvar cscope-process-cscope "cscope"
+  "The cscope executable to use.")
 
-;;;###autoload
-(defun cscope-find-func-call ( string )
-  "Find all calls to the function"
-  (interactive (get-symbol-interactively "Find calls to: "))
-  (cscope-find-goodies (concat "3" string "\n")))
+(cscope-defvar cscope-process-options "-q -d"
+  "Options to pass to cscope in addition to the -P path and -f path
+options.  A '-l' is added to the list since that must always be
+used.")
 
-;;;###autoload
-(defun cscope-find-string ( string )
-  "Find string using cscope stuff"
-  (interactive (get-symbol-interactively "Find string: "))
-  (cscope-find-goodies (concat "4" string "\n")))
+(cscope-defvar cscope-process-dir nil
+  "The directory to specify with the -P option when starting the
+cscope process.  This is the top level directory of the source tree
+passed to cscope when the database was built")
 
-;;;###autoload
-(defun cscope-find-pattern ( string )
-  "Finds egrep patter in cscope stuff"
-  (interactive (get-symbol-interactively "Pattern: "))
-  (cscope-find-goodies (concat "6" string "\n")))
+(cscope-defvar cscope-process-database nil
+  "The full path to the cscope database which is passed to the cscope
+process via the -f option")
 
-;;;###autoload
-(defun cscope-find-file ( string )
-  "Finds files matching PATTERN"
-  (interactive (get-symbol-interactively "Find file: "))
-  (cscope-find-goodies (concat "7" string "\n")))
+(cscope-defvar cscope-process-start-time nil
+  "The file modification time of the cscope.out file when
+the cscope process was started.")
 
-;;;###autoload
-(defun cscope-find-file-include ( string )
-  "Find the files which include the file matching PATTERN"
-  (interactive (get-symbol-interactively "Find files which include: "))
-  (cscope-find-goodies (concat "8" string "\n")))
+(defun cscope-needs-to-be-started ()
+  "Returns true if the cscope has never been started, has died and
+  needs to be restarted, or if the database has been updated implying
+  that the cscope process needs to be killed and then restarted."
+  (let* (process database file-mod-time)
+    (not (and
+	  (bufferp cscope-out-buffer)					;cscope-out-buffer has been set
+	  (buffer-name cscope-out-buffer)				;cscope-out-buffer still live
+	  (setq process (get-buffer-process cscope-out-buffer)) 	;has a process
+	  (eq (process-status process) 'run)				;process still running
+	  (setq database
+		(buffer-local-value
+		 'cscope-process-database cscope-out-buffer))		;database path
+	  (setq file-mod-time (nth 5 (file-attributes database)))	;get database mod time
+	  (equal (buffer-local-value					;mod time ok
+		  'cscope-process-start-time cscope-out-buffer)
+		 file-mod-time)))))
 
-;;;###autoload
-(defun cscope-find-assignment ( string )
-  "Find assignments to variables and fields matching PATTERN"
-  (interactive (get-symbol-interactively "Find assignments to symbol: "))
-  (cscope-find-goodies (concat "9" string "\n")))
+;; Stolen from rspec-mode.el
+(defun cscope-parent-directory (a-directory)
+  "Returns the directory of which a-directory is a child"
+  (file-name-directory (directory-file-name a-directory)))
 
-;;;###autoload
-(defun cscope-get-line-number ()
-  "Returns the \"line number\" out of a cscope output buffer"
-  (end-of-line)
-  (re-search-backward "^[ 0-9][ 0-9][0-9]")
-  (1- (string-to-number (buffer-substring (match-beginning 0) (match-end 0)))))
+;; Stolen from rspec-mode.el
+(defun cscope-root-directory-p (a-directory)
+  "Returns t if a-directory is the root"
+  (equal a-directory (cscope-parent-directory a-directory)))
 
-;;;###autoload
-(defun cscope-goto-from-list ( arg )
-  "Point is in a buffer pointing to a line produced by
-cscope-list-line. This routine plops into the file at the appropriate
-spot"
-  (interactive "P")
-  (let* ((num (cscope-get-line-number))
-	 (fname (expand-file-name (aref cscope-file-vector num)))
-	 (lnum (aref cscope-line-vector num)))
-    (if arg
-	(find-file-other-window fname)
-      (find-file fname))
-    (message (buffer-name))
-    (goto-char (point-min))
-    (forward-line (1- lnum))))
+(defun cscope-walk-tree ( f )
+  "Walk up directory tree starting from `default-directory' looking
+for a file named FILE.  Returns the directory FILE is found in or nil
+if FILE is not found."
+  (let ((dir default-directory))
+    (while (and (not (cscope-root-directory-p dir))
+		(not (file-exists-p (concat dir f))))
+      (setq dir (cscope-parent-directory dir)))
+    (if (file-exists-p (concat dir f))
+	dir
+      nil)))
 
-;;;###autoload
-(defun cscope-view-from-list ()
-  "Point is in a buffer pointing to a line produced by
-cscope-list-line. This routine plops into the file at the appropriate
-spot"
-  (interactive)
-  (let* ((num (cscope-get-line-number))
-	 (fname (expand-file-name (aref cscope-file-vector num)))
-	 (lnum (aref cscope-line-vector num)))
-    (find-file fname)
-    (goto-char (point-min))
-    (forward-line (1- lnum))
-    (view-buffer (current-buffer))))
+(defun get-cscope-out-buffer ()
+  "Returns the variable `cscope-out-buffer'.
+An error is signaled if cscope-out-buffer is not set."
+  (if (cscope-needs-to-be-started)
+      (let ((var cscope-dir-patterns))
+	(while (not (or (null var)
+			(string-match (nth 0 (nth 0 var)) default-directory)))
+	  (setq var (cdr var)))
+	(if var
+	    (progn
+	      (setq temp (car var))
+	      (cscope-init-process
+	       (eval (nth 1 temp))
+	       (eval (nth 2 temp))
+	       (eval (nth 3 temp))
+	       (eval (nth 4 temp))))
+	  (error "`cscope-out-buffer' is not set or points to a buffer that has been killed"))))
+  cscope-out-buffer)
 
-;;;
-;;; We are very carefull to reference only the cscope-out-buffer
-;;; variable from a normal C file.  We then switch to that buffer and
-;;; use its values for cscope-process and any other inherited
-;;; variables.  If cscope-out-buffer is nil or if the buffer does not
-;;; exist, we assume we need to recrank a cscope for this file.
-;;; 
+(defun cscope-buffer-name (cscope options dir database)
+  "Returns the name of cscope out buffer.
+Given CSCOPE, OPTIONS, DIR, and DATABASE, the name for the
+`cscope-out-buffer' is returned."
+  (format "*%s %s*"
+	  (file-name-nondirectory (directory-file-name (expand-file-name dir)))
+	  (file-name-nondirectory (directory-file-name (expand-file-name database)))))
 
-(defvar cscope-clone-dir nil
-  "Directory for the top of the clone tree used by cscope")
+(defun cscope-init-process ( cscope options dir database )
+  "Initialize a cscope process using CSCOPE OPTIONS DIR and DATABASE.
+This is not an interactive command.  The intent is interactive
+commands will be wrapped around this function.  The buffer for the
+process will be what `cscope-buffer-name' returns when passed the same
+four args passed to this function.  If the buffer already exists and
+if the process is still running, a new buffer and new process is not
+created."
+  (let* ((buf (get-buffer-create (cscope-buffer-name cscope options dir database)))
+	 (process (get-buffer-process buf))
+	 (file-mod-time (nth 5 (file-attributes database)))
+	 (dead-process (or (null process)
+			(null (eq (process-status process) 'run))))
+	 (options-list (append 
+			(save-match-data (split-string options))
+			(list
+			 "-P"
+			 dir
+			 "-f"
+			 database))))
+    ;; Current buffer's cscope-out-buffer points to the new buffer
+    (setq cscope-out-buffer buf)
 
-
-;;;###autoload
-(defun cscope-520-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix520"
-			  "/520_SERVICE" ))
-
-;;;###autoload
-(defun cscope-52B-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix52B"
-			  "/52B_SERVICE" ))
-
-;;;###autoload
-(defun cscope-52F-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix52F"
-			  "/52F_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-52H-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix52H"
-			  "/52H_COMPLETE" ))
-;;;###autoload
-(defun cscope-52I-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix52I"
-			  "/52I_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-52L-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix52L"
-			  "/52L_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-52M-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix52M"
-			  "/52M_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-52Q-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix52Q"
-			  "/52Q_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-52S-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix52S"
-			  "/52S_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-530-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix530"
-			  "/530_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-53A-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53A"
-			  "/53A_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-53D-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53D"
-			  "/53D_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-53E-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53E"
-			  "/53E_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-53H-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53H"
-			  "/53H_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-53J-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53J"
-			  "/53J_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-53L-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53L"
-			  "/53L_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-53N-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53N"
-			  "/53N_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-53Q-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53Q"
-			  "/53Q_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-53S-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53S"
-			  "/53S_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-53V-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53V"
-			  "/53V_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-53X-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53X"
-			  "/53X_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-610-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix610"
-			  "/610_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-61B-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61B"
-			  "/61B_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-61D-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61D"
-			  "/61D_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-61F-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61F"
-			  "/61F_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-61H-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61H"
-			  "/61H_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-61J-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61J"
-			  "/61J_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-61L-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61L"
-			  "/61L_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-61N-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61N"
-			  "/61N_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-61Q-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61Q"
-			  "/61Q_COMPLETE" ))
-
-
-;;;###autoload
-(defun cscope-61S-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61S"
-                          "/61S_COMPLETE" ))
-;;;###autoload
-(defun cscope-61V-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61V"
-			  "/61V_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-61X-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61X"
-			  "/61X_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-61Y-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61Y"
-			  "/61Y_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-710-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix710"
-                          "/710_SERVICE" ))
-;;;###autoload
-(defun cscope-71B-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix71B"
-                          "/71B_COMPLETE" ))
-;;;###autoload
-(defun cscope-71D-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix71D"
-                          "/71D_COMPLETE" ))
-;;;###autoload
-(defun cscope-71F-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix71F"
-                          "/71F_COMPLETE" ))
-;;;###autoload
-(defun cscope-71H-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix71H"
-                          "/71H_COMPLETE" ))
-;;;###autoload
-(defun cscope-71J-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix71J"
-                          "/71J_COMPLETE" ))
-;;;###autoload
-(defun cscope-71L-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix71L"
-                          "/71L_COMPLETE" ))
-
-;;;###autoload
-(defun cscope-ipf-process ( )
-  (interactive)
-  (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/isr/53ipfl53H"
-			  "/53ipfl53H_latest" ))
-
-;;;###autoload
-(defun cscope-bananas-are-fun ( base build )
-  (let ((new-buf (get-buffer-create "$&$&$&$"))
-	(data-dir (concat base "/cscope"))
-	(base-dir (concat base build ))
-	(count 0)
-	l out reply link)
-    (set-buffer new-buf)
-    (setq cscope-out-buffer nil)
-    (setq default-directory base-dir)
-    (setq l (directory-files data-dir nil ".*\.db$"))
-    (while l
-      (setq link (concat data-dir "/" (car l)))
-      (while (stringp (setq link (car (file-attributes link))))
-	nil)
-      (if (null link)
-	  (setq out (append out (list (cons (car l) (setq count (1+ count)))))))
-      (setq l (cdr l)))
-    (setq reply (completing-read "Cscope database: " out nil t "mono.db"))
-    (cscope-init-process (concat data-dir "/" reply) reply)
-    (kill-buffer new-buf)))
-
-;;;###autoload
-(defun cscope-new-process ( )
-  (interactive)
-  (setq cscope-out-buffer nil)
-  (cscope-init-process "cscope.out" ""))
-
-;;;###autoload
-(defun cscope-init-process ( cscope-out dbname )
-  (condition-case dummy
-      (set-buffer cscope-out-buffer)
-    (error 
-     (let* ((old-buf (current-buffer))
-	    (dir-temp (expand-file-name
-		       (read-file-name "Dir with cscope file "
-				       default-directory default-directory t)))
-	    (clone-temp dir-temp)
-	    (full-name (concat dir-temp "CSCOPE" dbname))
-	    (buf-name (concat "cscope:" dbname " " (file-name-nondirectory
-						    (directory-file-name
-						     dir-temp)))))
-	;
-	; We want to find a cscope buffer if we already have a cscope
-	; started in this directory.  We set buffer-file-name equal to
-	; the directory path with "CSCOPE" appended and use that to
-	; search with.  We eventuall set the buffer name to a shorter
-	; and nicer looking "cscope: dir" where dir is the last
-	; directory in the path
-	;
-	(if (setq cscope-out-buffer (get-file-buffer full-name))
-	    (set-buffer cscope-out-buffer)
-	  (set-buffer
-	   (setq cscope-out-buffer (create-file-buffer buf-name)))
-	  (setq buffer-file-name full-name
-		cscope-clone-dir clone-temp
-		default-directory dir-temp)
-	  (inherit-from-buffer old-buf)
-	  (setq cscope-process nil)))))
-  (pop-to-buffer cscope-out-buffer)
-  (let ((mod-time (nth 5 (file-attributes "cscope.out")))
-	(dead-proc (or (null cscope-process)
-		       (null (eq (process-status cscope-process) 'run)))))
-    (if (and (not dead-proc)
-	     (not (equal cscope-start-time mod-time)))
+    ;; We need to add a feature that compares the time stamp of the
+    ;; database (file-mod-time) with a saved value.  If we discover
+    ;; that the database has been updated, we should stop and restart
+    ;; the cscope process.  Various features could be added along
+    ;; these lines including a method to rebuild the cscope database
+    ;; from inside emacs but there are some obstacles to this.  For
+    ;; now, we'll just leave this comment.
+    ;;
+    ;; If process is nil or dead, we need to start the process.
+    (if dead-process
 	(progn
-	  (kill-process cscope-process)
-	  (setq dead-proc t)))
-    (if dead-proc
-	(progn
-	  (if cscope-process
+	  (if process
 	      (message "Restarting dead cscope-process...")
 	    (message "Starting new cscope process..."))
 	  (set-process-query-on-exit-flag
-	   (setq cscope-process (start-process "cscope" cscope-out-buffer
-					       cscope-program-name
-					       ""
-					       cscope-clone-dir
-					       "-f" cscope-out)) nil)
-	  (cscope-wait)
-	  (setq cscope-start-time mod-time))))
-  (setq buffer-read-only nil)
-  (erase-buffer))
+	   (setq process (apply 'start-process "cscope" buf
+				cscope
+				options-list)) nil)
 
-;;;###autoload
-(defun cscope-wait ()
-  "Waits for the cscope process to finish"
-  (message "Waiting for cscope...")
-  (while (and (eq (process-status cscope-process) 'run)
-	      (progn
-		(goto-char (point-max))
-		(beginning-of-line)
-		(not (looking-at ">> "))))
-    (accept-process-output cscope-process)))
+	  ;; for the new buffer, set the cscope specific variables
+	  ;; within the new buffer.  Note that cscope-out-buffer in
+	  ;; buf points to itself (the new buffer)
+	  (with-current-buffer buf
+	    (setq cscope-out-buffer buf
+		  cscope-process process
+		  cscope-process-cscope cscope
+		  cscope-process-options options
+		  cscope-process-dir dir
+		  cscope-process-database database
+		  cscope-process-start-time file-mod-time
+		  default-directory dir)
+	    (cscope-wait)
 
-;;;###autoload
+	    ;; This is a bit silly but I want the buffer to look nice
+	    ;; when first started.
+	    (erase-buffer)
+	    (setq buffer-read-only t)
+	    (set-buffer-modified-p nil)
+
+	    ;; Now, go into cscope-mode
+	    (cscope-mode))))))
+
+(define-minor-mode cscope-c-mode
+  "Minor mode for C files that use cscope
+
+\\{cscope-c-mode-map}"
+  :lighter " scope")
+
+(define-derived-mode cscope-mode nil "C-scope"
+  "mode the `cscope-out-buffer' is set to.
+
+\\{cscope-mode-map}"
+  (setq truncate-lines t))
+
 (defun cscope-format ()
-  "Formats the output of cscope to be pretty"
+  "Formats the output of cscope to be pretty.
+Return value is the number of lines generated.
+`current-buffer' must be set to the proper `cscope-out-buffer' before
+being called."
   (let ((longest-file 0)
 	(longest-function 0)
 	(longest-line 0)
 	(counter 0)
 	pat return-value)
+
+    ;; delete the ">> " last line
     (goto-char (point-max))
     (beginning-of-line)
     (delete-region (point)
 		   (save-excursion
 		     (forward-line 1)
 		     (point)))
+
+    ;; delete the "cscope: 2 lines"
     (goto-char (point-min))
     (delete-region (point)
 		   (save-excursion
@@ -634,302 +498,1135 @@ spot"
       (put-text-property (match-beginning 1) (point) 'mouse-face 'highlight)
       (beginning-of-line))
     (goto-char (point-min))
-    (not-modified)
+    (set-buffer-modified-p nil)
     return-value))
 
-(defun kill-cscope-buffers ( buf )
-  "Given a cscope buffer, kills all the buffers that have it as their
-  cscope-out-buffer."
-  (interactive "bBuffer: ")
-  (let* ((v (buffer-local-value 'cscope-out-buffer (get-buffer buf))))
-    (mapcar (lambda ( x )
-	      (if (eq v (buffer-local-value 'cscope-out-buffer x))
-		  (kill-buffer x)))
-	    (buffer-list))))
+(defun cscope-wait ()
+  "Waits for the cscope process to finish.
+`current-buffer' must be set to the proper `cscope-out-buffer'."
+  (message "Waiting for cscope...")
+  (while (and (eq (process-status cscope-process) 'run)
+	      (progn
+		(goto-char (point-max))
+		(beginning-of-line)
+		(not (looking-at ">> "))))
+    (accept-process-output cscope-process)))
 
-;;;###autoload
-(defun cscope-find-goodies ( string )
-  "Calls the cscope program and sends it STRING, plops into the buffer
-and puts the buffer into cscope-mode"
-  (interactive "sString: \nP")
-  (cscope-init-process "cscope.out" "")
-  (send-string cscope-process string)
-  (cscope-wait)
-  (if (and (= (cscope-format) 1) cscope-auto-go)
+(defun cscope-send-string ( string )
+  "Sends STRING to the cscope process.
+Using `with-current-buffer' set to `cscope-out-buffer', STRING is sent
+to `cscope-process'.  Then `cscope-wait' and `cscope-format' are
+called."
+  (with-current-buffer (get-cscope-out-buffer)
+    (setq buffer-read-only nil)
+    (erase-buffer)
+    (send-string cscope-process string)
+    (cscope-wait)
+    (cscope-format)
+    (setq buffer-read-only t)))
+
+(defun cscope-send-and-select ( string )
+  "Calls `cscope-send-string' with STRING and then displays what the
+user wants to see"
+  (cscope-send-string string)
+  (if (and (= (length cscope-file-vector) 1) cscope-auto-go)
       (cscope-goto-from-list nil)
-    (pop-to-buffer cscope-out-buffer)
-    (cscope-mode)))
+    (pop-to-buffer (get-cscope-out-buffer))))
 
-;;;###autoload
-(defun x-cscope-goto-from-list ( click )
-  "Move to where the mouse is and then process the line"
-  (interactive "@e")
-  (goto-char (posn-point (event-start click)))
-  (cscope-goto-from-list nil))
+(defun cscope-mouse-no-op ( click )
+  "Function which does nothing"
+  (interactive "e"))
 
-;;;###autoload
-(defun x-cscope-goto-from-list-other-window (click)
+(defun cscope-get-line-number ()
+  "Returns the \"line number\" out of a cscope output buffer"
+  (end-of-line)
+  (re-search-backward "^[ 0-9][ 0-9][0-9]")
+  (1- (string-to-number (buffer-substring (match-beginning 0) (match-end 0)))))
+
+(defun cscope-view-from-list ()
+  "Point is in a buffer pointing to a line produced by
+cscope-list-line. This routine plops into the file at the appropriate
+spot"
+  (interactive)
+  (let* ((num (cscope-get-line-number))
+	 (fname (expand-file-name (aref cscope-file-vector num)))
+	 (lnum (aref cscope-line-vector num)))
+    (find-file fname)
+    (goto-char (point-min))
+    (forward-line (1- lnum))
+    (view-buffer (current-buffer))))
+
+(defun cscope-goto-from-list ( arg )
+  "Point is in a buffer pointing to a line produced by
+cscope-list-line. This routine plops into the file at the appropriate
+spot"
+  (interactive "P")
+  (let* ((num (cscope-get-line-number))
+	 (fname (expand-file-name (aref cscope-file-vector num)))
+	 (lnum (aref cscope-line-vector num)))
+    (if arg
+	(find-file-other-window fname)
+      (find-file fname))
+    (message (buffer-name))
+    (goto-char (point-min))
+    (forward-line (1- lnum))))
+
+(defun cscope-mouse-goto-from-list-other-window (click)
   "Move to where the mouse is and then process the line"
   (interactive "@e")
   (goto-char (posn-point (event-start click)))
   (cscope-goto-from-list t))
 
-;;;###autoload
-(defun x-cscope-view-from-list ( click )
+(defun cscope-mouse-view-from-list ( click )
   "Move to where the mouse is and then process the line"
   (interactive "@e")
   (goto-char (posn-point (event-start click)))
   (cscope-view-from-list))
 
-;;
-;; Neat features for c-mode so that we can cscope from the mouse
-;;
-;;;###autoload
-(defun x-c-mode-cscope-sym ( click )
-  "Find symbol via cscope that mouse is pointing at"
-  (interactive "@e")
-  (goto-char (posn-point (event-start click)))
-  (cscope-find-goodies (concat "0" (get-symbol-non-interactively) "\n")))
 
-;;;###autoload
-(defun x-c-mode-cscope-func ( click )
-  "Find function via cscope that mouse is pointing at"
-  (interactive "@e")
-  (goto-char (posn-point (event-start click)))
-  (cscope-find-goodies (concat "1" (get-symbol-non-interactively) "\n")))
+(defmacro cscope-define-function ( name symbol doc str prompt )
+  "Define three functions for a particular CScope search.
+The nine search facilities that CScope provides need to be called
+from a key sequence, a mouse event, or from a menu.  This macro allows
+a single definition to provide the three different functions.
 
-;;;###autoload
-(defun x-cscope-no-op ( click )
-  "Function which does nothing"
-  (interactive "e"))
+NAME is the base name for the functions to define.  \"cscope-\"
+will be prepended to NAME to provide the kbd event driven
+version, \"cscope-mouse-\" for the mouse event driven version,
+and \"cscope-menu-\" for the menu driven version.
 
-;;; From backing list
-;;; \(^.*\)/aix\(...\)/\(5200\|5300\|6100\|7100\)\(-[0-9][0-9]\)\(-[0-9][0-9]\)?\(Gold\|_SP\)
-;;; (defalias 'cscope-\3\4\5 'cscope-\2-process)
+SYMBOL is the type of the single argument that the kbd driven version
+accepts.
 
-(defalias 'cscope-5200-06 'cscope-52I-process)
-(defalias 'cscope-5200-07 'cscope-52L-process)
-(defalias 'cscope-5200-08 'cscope-52M-process)
-(defalias 'cscope-5200-09-01 'cscope-52Q-process)
-(defalias 'cscope-5200-09-02 'cscope-52Q-process)
-(defalias 'cscope-5200-09-03 'cscope-52Q-process)
-(defalias 'cscope-5200-09-04 'cscope-52Q-process)
-(defalias 'cscope-5200-09-05 'cscope-52Q-process)
-(defalias 'cscope-5200-09-06 'cscope-52Q-process)
-(defalias 'cscope-5200-09 'cscope-52Q-process)
-(defalias 'cscope-5200-10-01 'cscope-52S-process)
-(defalias 'cscope-5200-10-02 'cscope-52S-process)
-(defalias 'cscope-5200-10-03 'cscope-52S-process)
-(defalias 'cscope-5200-10-04 'cscope-52S-process)
-(defalias 'cscope-5200-10-05 'cscope-52S-process)
-(defalias 'cscope-5200-10-06 'cscope-52S-process)
-(defalias 'cscope-5200-10-07 'cscope-52S-process)
-(defalias 'cscope-5200-10-08 'cscope-52S-process)
-(defalias 'cscope-5200-10 'cscope-52S-process)
-(defalias 'cscope-5300-02 'cscope-53A-process)
-(defalias 'cscope-5300-03 'cscope-53D-process)
-(defalias 'cscope-5300-04 'cscope-53E-process)
-(defalias 'cscope-5300-05-01 'cscope-53H-process)
-(defalias 'cscope-5300-05-02 'cscope-53H-process)
-(defalias 'cscope-5300-05-03 'cscope-53H-process)
-(defalias 'cscope-5300-05-04 'cscope-53H-process)
-(defalias 'cscope-5300-05-05 'cscope-53H-process)
-(defalias 'cscope-5300-05-06 'cscope-53H-process)
-(defalias 'cscope-5300-05 'cscope-53H-process)
-(defalias 'cscope-5300-06-01 'cscope-53J-process)
-(defalias 'cscope-5300-06-02 'cscope-53J-process)
-(defalias 'cscope-5300-06-03 'cscope-53J-process)
-(defalias 'cscope-5300-06-04 'cscope-53J-process)
-(defalias 'cscope-5300-06-05 'cscope-53J-process)
-(defalias 'cscope-5300-06-06 'cscope-53J-process)
-(defalias 'cscope-5300-06-07 'cscope-53J-process)
-(defalias 'cscope-5300-06-08 'cscope-53J-process)
-(defalias 'cscope-5300-06-09 'cscope-53J-process)
-(defalias 'cscope-5300-06-10 'cscope-53J-process)
-(defalias 'cscope-5300-06-11 'cscope-53J-process)
-(defalias 'cscope-5300-06-12 'cscope-53J-process)
-(defalias 'cscope-5300-06 'cscope-53J-process)
-(defalias 'cscope-5300-07-01 'cscope-53L-process)
-(defalias 'cscope-5300-07-02 'cscope-53L-process)
-(defalias 'cscope-5300-07-03 'cscope-53L-process)
-(defalias 'cscope-5300-07-04 'cscope-53L-process)
-(defalias 'cscope-5300-07-05 'cscope-53L-process)
-(defalias 'cscope-5300-07-06 'cscope-53L-process)
-(defalias 'cscope-5300-07-07 'cscope-53L-process)
-(defalias 'cscope-5300-07-08 'cscope-53L-process)
-(defalias 'cscope-5300-07-09 'cscope-53L-process)
-(defalias 'cscope-5300-07-10 'cscope-53L-process)
-(defalias 'cscope-5300-07 'cscope-53L-process)
-(defalias 'cscope-5300-08-01 'cscope-53N-process)
-(defalias 'cscope-5300-08-02 'cscope-53N-process)
-(defalias 'cscope-5300-08-03 'cscope-53N-process)
-(defalias 'cscope-5300-08-04 'cscope-53N-process)
-(defalias 'cscope-5300-08-05 'cscope-53N-process)
-(defalias 'cscope-5300-08-06 'cscope-53N-process)
-(defalias 'cscope-5300-08-07 'cscope-53N-process)
-(defalias 'cscope-5300-08-08 'cscope-53N-process)
-(defalias 'cscope-5300-08-09 'cscope-53N-process)
-(defalias 'cscope-5300-08-10 'cscope-53N-process)
-(defalias 'cscope-5300-08 'cscope-53N-process)
-(defalias 'cscope-5300-09-01 'cscope-53Q-process)
-(defalias 'cscope-5300-09-02 'cscope-53Q-process)
-(defalias 'cscope-5300-09-03 'cscope-53Q-process)
-(defalias 'cscope-5300-09-04 'cscope-53Q-process)
-(defalias 'cscope-5300-09-05 'cscope-53Q-process)
-(defalias 'cscope-5300-09-06 'cscope-53Q-process)
-(defalias 'cscope-5300-09-07 'cscope-53Q-process)
-(defalias 'cscope-5300-09-08 'cscope-53Q-process)
-(defalias 'cscope-5300-09 'cscope-53Q-process)
-(defalias 'cscope-5300-10-01 'cscope-53S-process)
-(defalias 'cscope-5300-10-02 'cscope-53S-process)
-(defalias 'cscope-5300-10-03 'cscope-53S-process)
-(defalias 'cscope-5300-10-04 'cscope-53S-process)
-(defalias 'cscope-5300-10-05 'cscope-53S-process)
-(defalias 'cscope-5300-10-06 'cscope-53S-process)
-(defalias 'cscope-5300-10-07 'cscope-53S-process)
-(defalias 'cscope-5300-10 'cscope-53S-process)
-(defalias 'cscope-5300-11-01 'cscope-53V-process)
-(defalias 'cscope-5300-11-02 'cscope-53V-process)
-(defalias 'cscope-5300-11-03 'cscope-53V-process)
-(defalias 'cscope-5300-11-04 'cscope-53V-process)
-(defalias 'cscope-5300-11-05 'cscope-53V-process)
-(defalias 'cscope-5300-11-06 'cscope-53V-process)
-(defalias 'cscope-5300-11-07 'cscope-53V-process)
-(defalias 'cscope-5300-11-08 'cscope-53V-process)
-(defalias 'cscope-5300-11 'cscope-53V-process)
-(defalias 'cscope-5300-12-01 'cscope-53X-process)
-(defalias 'cscope-5300-12-02 'cscope-53X-process)
-(defalias 'cscope-5300-12-03 'cscope-53X-process)
-(defalias 'cscope-5300-12-04 'cscope-53X-process)
-(defalias 'cscope-5300-12-05 'cscope-53X-process)
-(defalias 'cscope-5300-12-06 'cscope-53X-process)
-(defalias 'cscope-5300-12-07 'cscope-53X-process)
-(defalias 'cscope-5300-12-08 'cscope-53X-process)
-(defalias 'cscope-5300-12 'cscope-53X-process)
-(defalias 'cscope-6100-00-01 'cscope-540-process)
-(defalias 'cscope-6100-00-02 'cscope-540-process)
-(defalias 'cscope-6100-00-03 'cscope-540-process)
-(defalias 'cscope-6100-00-04 'cscope-540-process)
-(defalias 'cscope-6100-00-05 'cscope-540-process)
-(defalias 'cscope-6100-00-06 'cscope-540-process)
-(defalias 'cscope-6100-00-07 'cscope-540-process)
-(defalias 'cscope-6100-00-08 'cscope-540-process)
-(defalias 'cscope-6100-00-09 'cscope-540-process)
-(defalias 'cscope-6100-00-10 'cscope-540-process)
-(defalias 'cscope-6100-00-11 'cscope-540-process)
-(defalias 'cscope-6100-00-01 'cscope-610-process)
-(defalias 'cscope-6100-00-02 'cscope-610-process)
-(defalias 'cscope-6100-00-03 'cscope-610-process)
-(defalias 'cscope-6100-00-04 'cscope-610-process)
-(defalias 'cscope-6100-00-05 'cscope-610-process)
-(defalias 'cscope-6100-00-06 'cscope-610-process)
-(defalias 'cscope-6100-00-07 'cscope-610-process)
-(defalias 'cscope-6100-00-08 'cscope-610-process)
-(defalias 'cscope-6100-00-09 'cscope-610-process)
-(defalias 'cscope-6100-00-10 'cscope-610-process)
-(defalias 'cscope-6100-00-11 'cscope-610-process)
-(defalias 'cscope-6100-01-01 'cscope-61B-process)
-(defalias 'cscope-6100-01-02 'cscope-61B-process)
-(defalias 'cscope-6100-01-03 'cscope-61B-process)
-(defalias 'cscope-6100-01-04 'cscope-61B-process)
-(defalias 'cscope-6100-01-05 'cscope-61B-process)
-(defalias 'cscope-6100-01-06 'cscope-61B-process)
-(defalias 'cscope-6100-01-07 'cscope-61B-process)
-(defalias 'cscope-6100-01-08 'cscope-61B-process)
-(defalias 'cscope-6100-01-09 'cscope-61B-process)
-(defalias 'cscope-6100-01 'cscope-61B-process)
-(defalias 'cscope-6100-02-01 'cscope-61D-process)
-(defalias 'cscope-6100-02-02 'cscope-61D-process)
-(defalias 'cscope-6100-02-03 'cscope-61D-process)
-(defalias 'cscope-6100-02-04 'cscope-61D-process)
-(defalias 'cscope-6100-02-05 'cscope-61D-process)
-(defalias 'cscope-6100-02-06 'cscope-61D-process)
-(defalias 'cscope-6100-02-07 'cscope-61D-process)
-(defalias 'cscope-6100-02-08 'cscope-61D-process)
-(defalias 'cscope-6100-02-09 'cscope-61D-process)
-(defalias 'cscope-6100-02-10 'cscope-61D-process)
-(defalias 'cscope-6100-02 'cscope-61D-process)
-(defalias 'cscope-6100-03-01 'cscope-61F-process)
-(defalias 'cscope-6100-03-02 'cscope-61F-process)
-(defalias 'cscope-6100-03-03 'cscope-61F-process)
-(defalias 'cscope-6100-03-04 'cscope-61F-process)
-(defalias 'cscope-6100-03-05 'cscope-61F-process)
-(defalias 'cscope-6100-03-06 'cscope-61F-process)
-(defalias 'cscope-6100-03-07 'cscope-61F-process)
-(defalias 'cscope-6100-03-08 'cscope-61F-process)
-(defalias 'cscope-6100-03-09 'cscope-61F-process)
-(defalias 'cscope-6100-03-10 'cscope-61F-process)
-(defalias 'cscope-6100-03 'cscope-61F-process)
-(defalias 'cscope-6100-04-01 'cscope-61H-process)
-(defalias 'cscope-6100-04-02 'cscope-61H-process)
-(defalias 'cscope-6100-04-03 'cscope-61H-process)
-(defalias 'cscope-6100-04-04 'cscope-61H-process)
-(defalias 'cscope-6100-04-05 'cscope-61H-process)
-(defalias 'cscope-6100-04-06 'cscope-61H-process)
-(defalias 'cscope-6100-04-07 'cscope-61H-process)
-(defalias 'cscope-6100-04-08 'cscope-61H-process)
-(defalias 'cscope-6100-04-09 'cscope-61H-process)
-(defalias 'cscope-6100-04-10 'cscope-61H-process)
-(defalias 'cscope-6100-04-11 'cscope-61H-process)
-(defalias 'cscope-6100-04 'cscope-61H-process)
-(defalias 'cscope-6100-05-01 'cscope-61J-process)
-(defalias 'cscope-6100-05-02 'cscope-61J-process)
-(defalias 'cscope-6100-05-03 'cscope-61J-process)
-(defalias 'cscope-6100-05-04 'cscope-61J-process)
-(defalias 'cscope-6100-05-05 'cscope-61J-process)
-(defalias 'cscope-6100-05-06 'cscope-61J-process)
-(defalias 'cscope-6100-05-07 'cscope-61J-process)
-(defalias 'cscope-6100-05-08 'cscope-61J-process)
-(defalias 'cscope-6100-05-09 'cscope-61J-process)
-(defalias 'cscope-6100-05 'cscope-61J-process)
-(defalias 'cscope-6100-06-01 'cscope-61L-process)
-(defalias 'cscope-6100-06-02 'cscope-61L-process)
-(defalias 'cscope-6100-06-03 'cscope-61L-process)
-(defalias 'cscope-6100-06-04 'cscope-61L-process)
-(defalias 'cscope-6100-06 'cscope-61L-process)
-(defalias 'cscope-6100-06-05 'cscope-61N-process)
-(defalias 'cscope-6100-06-06 'cscope-61N-process)
-(defalias 'cscope-6100-06-07 'cscope-61N-process)
-(defalias 'cscope-6100-06-08 'cscope-61N-process)
-(defalias 'cscope-6100-06-09 'cscope-61N-process)
-(defalias 'cscope-6100-06-10 'cscope-61N-process)
-(defalias 'cscope-6100-06-11 'cscope-61N-process)
-(defalias 'cscope-6100-06-12 'cscope-61N-process)
-(defalias 'cscope-6100-07-01 'cscope-61Q-process)
-(defalias 'cscope-6100-07-02 'cscope-61Q-process)
-(defalias 'cscope-6100-07-03 'cscope-61Q-process)
-(defalias 'cscope-6100-07 'cscope-61Q-process)
-(defalias 'cscope-6100-07-04 'cscope-61S-process)
-(defalias 'cscope-6100-07-05 'cscope-61S-process)
-(defalias 'cscope-6100-07-06 'cscope-61S-process)
-(defalias 'cscope-6100-07-07 'cscope-61S-process)
-(defalias 'cscope-6100-07-08 'cscope-61S-process)
-(defalias 'cscope-6100-08-01 'cscope-61V-process)
-(defalias 'cscope-6100-08 'cscope-61V-process)
-(defalias 'cscope-6100-08-02 'cscope-61X-process)
-(defalias 'cscope-6100-08-03 'cscope-61X-process)
-(defalias 'cscope-7100-00-01 'cscope-710-process)
-(defalias 'cscope-7100-00-02 'cscope-710-process)
-(defalias 'cscope-7100-00-03 'cscope-71B-process)
-(defalias 'cscope-7100-00-04 'cscope-71B-process)
-(defalias 'cscope-7100-00-05 'cscope-71B-process)
-(defalias 'cscope-7100-00-06 'cscope-71B-process)
-(defalias 'cscope-7100-00-07 'cscope-71B-process)
-(defalias 'cscope-7100-00-08 'cscope-71B-process)
-(defalias 'cscope-7100-00-09 'cscope-71B-process)
-(defalias 'cscope-7100-00-10 'cscope-71B-process)
-(defalias 'cscope-7100-01-01 'cscope-71D-process)
-(defalias 'cscope-7100-01-02 'cscope-71D-process)
-(defalias 'cscope-7100-01-03 'cscope-71D-process)
-(defalias 'cscope-7100-01 'cscope-71D-process)
-(defalias 'cscope-7100-01-04 'cscope-71F-process)
-(defalias 'cscope-7100-01-05 'cscope-71F-process)
-(defalias 'cscope-7100-01-06 'cscope-71F-process)
-(defalias 'cscope-7100-01-07 'cscope-71F-process)
-(defalias 'cscope-7100-01-08 'cscope-71F-process)
-(defalias 'cscope-7100-02-01 'cscope-71H-process)
-(defalias 'cscope-7100-02 'cscope-71H-process)
-(defalias 'cscope-7100-02-02 'cscope-71J-process)
-(defalias 'cscope-7100-02-03 'cscope-71J-process)
+DOC is the doc string without any ending period for the kbd
+driven function.  This will be modified slightly for the other
+two versions.
+
+STR is the digit string, e.g. \"0\" to prepend to what is sent to the
+cscope process.
+
+PROMPT is the prompt that the kbd event version uses to prompt for the
+string.
+
+The mouse driven version will place point at the start of the mouse
+event and then search for the symbol found under the point.  The menu
+driven version simply search for the symbol found under the current
+location of the point."
+  (declare (indent defun))
+  (let ((kbd-name (intern (format "cscope-%s" name)))
+	(kbd-doc (concat doc "."))
+	(mouse-name (intern (format "cscope-mouse-%s" name)))
+	(mouse-doc (concat doc " that mouse is pointing at."))
+	(menu-name (intern (format "cscope-menu-%s" name)))
+	(menu-doc (concat doc " that cursor is currently on.")))
+    `(progn
+       (defun ,kbd-name ( ,symbol )
+	 ,kbd-doc
+	 (interactive (get-symbol-interactively ,prompt))
+	 (cscope-send-and-select (concat ,str ,symbol "\n")))
+       (defun ,mouse-name ( click )
+	 ,mouse-doc
+	 (interactive "@e")
+	 (goto-char (posn-point (event-start click)))
+	 (cscope-send-and-select (concat ,str (get-symbol-non-interactively) "\n")))
+       (defun ,menu-name ( )
+	 ,menu-doc
+	 (interactive)
+	 (cscope-send-and-select (concat ,str (get-symbol-non-interactively) "\n"))))))
+
+(cscope-define-function
+  find-references symbol
+  "Find references to the SYMBOL"
+  "0"
+  "Find references to symbol: ")
+
+(cscope-define-function
+  find-declarations symbol
+  "Find declarations for the SYMBOL"
+  "1"
+  "Find declarations of symbol: ")
+
+(cscope-define-function
+  find-functions-called symbol
+  "Find functions called by SYMBOL"
+  "2"
+  "Find calls from: ")
+
+(cscope-define-function
+  find-calling-functions symbol
+  "Find calls to SYMBOL"
+  "3"
+  "Find calls to: ")
+
+(cscope-define-function
+  find-string string
+  "Find STRING"
+  "4"
+  "Find string: ")
+
+(cscope-define-function
+  find-pattern pattern
+  "Find regular expression PATTERN"
+  "6"
+  "Find pattern: ")
+
+(cscope-define-function
+  find-file pattern
+  "Find files matching PATTERN"
+  "7"
+  "Find file (regexp): ")
+
+(cscope-define-function
+  find-file-include pattern
+  "Find files which includes files matching PATTERN"
+  "8"
+  "Find files which include (regexp): ")
+
+(cscope-define-function
+  find-assignment symbol
+  "Find assignments to SYMBOL"
+  "9"
+  "Find assignments to symbol: ")
+
+(add-hook 'c-mode-hook 'cscope-c-mode)
+(add-hook 'c++-mode-hook 'cscope-c-mode)
+
+;;; END END
+
+;(global-set-key [mouse-3] 'x-c-mode-cscope-func)
+;(global-set-key [double-mouse-3] 'x-c-mode-cscope-sym)
+
+;;;;;; (funcall (lookup-key cscope-c-minor-mode-menu (vector (car (x-popup-menu t cscope-c-minor-mode-menu)))))
+
+;;;;
+;;;;
+;;;;  Original Old code from here down
+;;;;
+;;;;
+
+;; ;; This is a set of routines which uses the output of cscope to do
+;; ;; basically the same things as cscope except you don't have to leave
+;; ;; emacs (what a concept!)
+;; ;;
+;; ;; Recommended use
+;; ;;
+;; ;; Setup all the cscope goodies
+;; ;;(autoload 'cscope-find-goodies "cscope"
+;; ;;	  "Creates a cscope buffer with lines that match STRING"
+;; ;;	  t)
+;; ;;(autoload 'cscope-find-func "cscope"
+;; ;;	  "Find FUNCTION declaration (or a #define) using the cscope stuff"
+;; ;;	    t)
+;; ;;(autoload 'cscope-find-symbol "cscope"
+;; ;;	  "Find all references to SYMBOL"
+;; ;;	  t)
+;; ;;(autoload 'cscope-find-func-call "cscope"
+;; ;;	  "Find all calls to FUNCTION"
+;; ;;	  t)
+;; ;;(autoload 'cscope-find-file "cscope"
+;; ;;	  "Finds files matching PATTERN"
+;; ;;	  t)
+;; ;;(autoload 'cscope-find-file-include "cscope"
+;; ;;	  "Finds files which include the file matching PATTERN"
+;; ;;	  t)
+;; ;;
+;; ;; bind the above functions to your favorite key sequence.
+;; ;;
+
+;; ;; Remove the old version 3 build stuff
+
+
+;; (defvar cscope-start-time nil
+;;   "Last modification time of cscope.out file when cscope was started")
+;; (make-variable-buffer-local 'cscope-start-time)
+
+;; (defvar cscope-program-name "cscope-front"
+;;   "*Name of program to run for cscope stuff")
+
+;; (defvar cscope-auto-go t
+;;   "*When only 1 cscope entry is found, emacs automatically selects that
+;; entry")
+
+;; (defvar cscope-process nil
+;;   "Holds the process object for 'cscope'")
+;; (make-variable-buffer-inherited 'cscope-process)
+
+;; (defvar cscope-file-vector nil
+;;   "Holds the full path names for the files listed in the cscope output")
+;; (make-variable-buffer-local 'cscope-file-vector)
+
+;; (defvar cscope-line-vector nil
+;;   "Holds the line numbers for the lines listed in the cscope output")
+;; (make-variable-buffer-local 'cscope-line-vector)
+
+;; (defvar cscope-mode-map nil "")
+
+;; (if cscope-mode-map
+;;     ()
+;;   (setq cscope-mode-map (make-keymap))
+;;   (define-key cscope-mode-map "n" 'next-line)
+;;   (define-key cscope-mode-map " " 'next-line)
+;;   (define-key cscope-mode-map "p" 'previous-line)
+;;   (define-key cscope-mode-map "\177" 'previous-line)
+;;   (define-key cscope-mode-map "v" 'cscope-view-from-list)
+;;   (define-key cscope-mode-map "q" 'delete-window)
+;;   (define-key cscope-mode-map "e" 'cscope-goto-from-list)
+;;   (define-key cscope-mode-map [mouse-1] 'x-cscope-goto-from-list-other-window)
+;;   (define-key cscope-mode-map [drag-mouse-1] 'x-cscope-no-op)
+;;   (define-key cscope-mode-map [down-mouse-1] 'x-cscope-no-op)
+;;   (define-key cscope-mode-map [mouse-2] 'x-cscope-goto-from-list)
+;;   (define-key cscope-mode-map [drag-mouse-2] 'x-cscope-no-op)
+;;   (define-key cscope-mode-map [down-mouse-2] 'x-cscope-no-op)
+;;   (define-key cscope-mode-map [mouse-3] 'x-cscope-view-from-list)
+;;   (define-key cscope-mode-map [drag-mouse-3] 'x-cscope-no-op)
+;;   (define-key cscope-mode-map [down-mouse-3] 'x-cscope-no-op)
+;;   )
+
+;; ;;;###autoload
+;; (defun cscope-mode ()
+;;   "Major mode used to look at the cscope output stuff\n
+;; Type:
+;;   n to go to the next line
+;;   Space to go to the next line
+;;   p to go to the previous line
+;;   Rubout to go to the previous line
+;;   v to view the file and line
+;;   q to delete the cscope window
+;;   e to edit the file at the line
+;; "
+;;   (use-local-map cscope-mode-map)
+;;   (setq truncate-lines t)
+;;   (setq buffer-read-only t)
+;;   (setq major-mode 'cscope-mode)
+;;   (setq mode-name "C-Scope"))
+
+;; ;;;###autoload
+;; (defun cscope-find-symbol ( string )
+;;   "Find all references to the SYMBOL."
+;;   (interactive (get-symbol-interactively "Find symbol: "))
+;;   (cscope-find-goodies (concat "0" string "\n")))
+
+;; ;;;###autoload
+;; (defun cscope-find-func ( string )
+;;   "Find a function declaration (or a #define) using the cscope stuff"
+;;   (interactive (get-symbol-interactively "Find function: "))
+;;   (cscope-find-goodies (concat "1" string "\n")))
+
+;; ;;;###autoload
+;; (defun cscope-find-functions-called ( string )
+;;   "Find all functions called by this function"
+;;   (interactive (get-symbol-interactively "Find calls from: "))
+;;   (cscope-find-goodies (concat "2" string "\n")))
+
+;; ;;;###autoload
+;; (defun cscope-find-func-call ( string )
+;;   "Find all calls to the function"
+;;   (interactive (get-symbol-interactively "Find calls to: "))
+;;   (cscope-find-goodies (concat "3" string "\n")))
+
+;; ;;;###autoload
+;; (defun cscope-find-string ( string )
+;;   "Find string using cscope stuff"
+;;   (interactive (get-symbol-interactively "Find string: "))
+;;   (cscope-find-goodies (concat "4" string "\n")))
+
+;; ;;;###autoload
+;; (defun cscope-find-pattern ( string )
+;;   "Finds egrep patter in cscope stuff"
+;;   (interactive (get-symbol-interactively "Pattern: "))
+;;   (cscope-find-goodies (concat "6" string "\n")))
+
+;; ;;;###autoload
+;; (defun cscope-find-file ( string )
+;;   "Finds files matching PATTERN"
+;;   (interactive (get-symbol-interactively "Find file: "))
+;;   (cscope-find-goodies (concat "7" string "\n")))
+
+;; ;;;###autoload
+;; (defun cscope-find-file-include ( string )
+;;   "Find the files which include the file matching PATTERN"
+;;   (interactive (get-symbol-interactively "Find files which include: "))
+;;   (cscope-find-goodies (concat "8" string "\n")))
+
+;; ;;;###autoload
+;; (defun cscope-find-assignment ( string )
+;;   "Find assignments to variables and fields matching PATTERN"
+;;   (interactive (get-symbol-interactively "Find assignments to symbol: "))
+;;   (cscope-find-goodies (concat "9" string "\n")))
+
+;; ;;;###autoload
+;; (defun cscope-get-line-number ()
+;;   "Returns the \"line number\" out of a cscope output buffer"
+;;   (end-of-line)
+;;   (re-search-backward "^[ 0-9][ 0-9][0-9]")
+;;   (1- (string-to-number (buffer-substring (match-beginning 0) (match-end 0)))))
+
+;; ;;;###autoload
+;; (defun cscope-goto-from-list ( arg )
+;;   "Point is in a buffer pointing to a line produced by
+;; cscope-list-line. This routine plops into the file at the appropriate
+;; spot"
+;;   (interactive "P")
+;;   (let* ((num (cscope-get-line-number))
+;; 	 (fname (expand-file-name (aref cscope-file-vector num)))
+;; 	 (lnum (aref cscope-line-vector num)))
+;;     (if arg
+;; 	(find-file-other-window fname)
+;;       (find-file fname))
+;;     (message (buffer-name))
+;;     (goto-char (point-min))
+;;     (forward-line (1- lnum))))
+
+;; ;;;###autoload
+;; (defun cscope-view-from-list ()
+;;   "Point is in a buffer pointing to a line produced by
+;; cscope-list-line. This routine plops into the file at the appropriate
+;; spot"
+;;   (interactive)
+;;   (let* ((num (cscope-get-line-number))
+;; 	 (fname (expand-file-name (aref cscope-file-vector num)))
+;; 	 (lnum (aref cscope-line-vector num)))
+;;     (find-file fname)
+;;     (goto-char (point-min))
+;;     (forward-line (1- lnum))
+;;     (view-buffer (current-buffer))))
+
+;; ;;;
+;; ;;; We are very carefull to reference only the cscope-out-buffer
+;; ;;; variable from a normal C file.  We then switch to that buffer and
+;; ;;; use its values for cscope-process and any other inherited
+;; ;;; variables.  If cscope-out-buffer is nil or if the buffer does not
+;; ;;; exist, we assume we need to recrank a cscope for this file.
+;; ;;; 
+
+;; (defvar cscope-clone-dir nil
+;;   "Directory for the top of the clone tree used by cscope")
+
+
+;; ;;;###autoload
+;; (defun cscope-520-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix520"
+;; 			  "/520_SERVICE" ))
+
+;; ;;;###autoload
+;; (defun cscope-52B-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix52B"
+;; 			  "/52B_SERVICE" ))
+
+;; ;;;###autoload
+;; (defun cscope-52F-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix52F"
+;; 			  "/52F_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-52H-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix52H"
+;; 			  "/52H_COMPLETE" ))
+;; ;;;###autoload
+;; (defun cscope-52I-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix52I"
+;; 			  "/52I_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-52L-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix52L"
+;; 			  "/52L_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-52M-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix52M"
+;; 			  "/52M_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-52Q-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix52Q"
+;; 			  "/52Q_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-52S-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix52S"
+;; 			  "/52S_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-530-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix530"
+;; 			  "/530_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-53A-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53A"
+;; 			  "/53A_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-53D-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53D"
+;; 			  "/53D_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-53E-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53E"
+;; 			  "/53E_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-53H-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53H"
+;; 			  "/53H_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-53J-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53J"
+;; 			  "/53J_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-53L-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53L"
+;; 			  "/53L_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-53N-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53N"
+;; 			  "/53N_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-53Q-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53Q"
+;; 			  "/53Q_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-53S-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53S"
+;; 			  "/53S_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-53V-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53V"
+;; 			  "/53V_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-53X-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix53X"
+;; 			  "/53X_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-610-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix610"
+;; 			  "/610_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-61B-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61B"
+;; 			  "/61B_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-61D-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61D"
+;; 			  "/61D_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-61F-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61F"
+;; 			  "/61F_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-61H-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61H"
+;; 			  "/61H_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-61J-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61J"
+;; 			  "/61J_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-61L-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61L"
+;; 			  "/61L_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-61N-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61N"
+;; 			  "/61N_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-61Q-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61Q"
+;; 			  "/61Q_COMPLETE" ))
+
+
+;; ;;;###autoload
+;; (defun cscope-61S-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61S"
+;;                           "/61S_COMPLETE" ))
+;; ;;;###autoload
+;; (defun cscope-61V-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61V"
+;; 			  "/61V_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-61X-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61X"
+;; 			  "/61X_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-61Y-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix61Y"
+;; 			  "/61Y_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-710-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix710"
+;;                           "/710_SERVICE" ))
+;; ;;;###autoload
+;; (defun cscope-71B-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix71B"
+;;                           "/71B_COMPLETE" ))
+;; ;;;###autoload
+;; (defun cscope-71D-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix71D"
+;;                           "/71D_COMPLETE" ))
+;; ;;;###autoload
+;; (defun cscope-71F-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix71F"
+;;                           "/71F_COMPLETE" ))
+;; ;;;###autoload
+;; (defun cscope-71H-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix71H"
+;;                           "/71H_COMPLETE" ))
+;; ;;;###autoload
+;; (defun cscope-71J-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix71J"
+;;                           "/71J_COMPLETE" ))
+;; ;;;###autoload
+;; (defun cscope-71L-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/aix71L"
+;;                           "/71L_COMPLETE" ))
+
+;; ;;;###autoload
+;; (defun cscope-ipf-process ( )
+;;   (interactive)
+;;   (cscope-bananas-are-fun "/gsa/ausgsa/projects/a/aix/isr/53ipfl53H"
+;; 			  "/53ipfl53H_latest" ))
+
+;; ;;;###autoload
+;; (defun cscope-bananas-are-fun ( base build )
+;;   (let ((new-buf (get-buffer-create "$&$&$&$"))
+;; 	(data-dir (concat base "/cscope"))
+;; 	(base-dir (concat base build ))
+;; 	(count 0)
+;; 	l out reply link)
+;;     (set-buffer new-buf)
+;;     (setq cscope-out-buffer nil)
+;;     (setq default-directory base-dir)
+;;     (setq l (directory-files data-dir nil ".*\.db$"))
+;;     (while l
+;;       (setq link (concat data-dir "/" (car l)))
+;;       (while (stringp (setq link (car (file-attributes link))))
+;;         nil)
+;;       (if (null link)
+;;           (setq out (append out (list (cons (car l) (setq count (1+ count)))))))
+;;       (setq l (cdr l)))
+;;     (setq reply (completing-read "Cscope database: " out nil t "mono.db"))
+;;     (cscope-init-process (concat data-dir "/" reply) reply)
+;;     (kill-buffer new-buf)))
+
+;; ;;;###autoload
+;; (defun cscope-new-process ( )
+;;   (interactive)
+;;   (setq cscope-out-buffer nil)
+;;   (cscope-init-process "cscope.out" ""))
+
+;; ;;;###autoload
+;; (defun cscope-init-process ( cscope-out dbname )
+;;   (condition-case dummy
+;;       (set-buffer cscope-out-buffer)
+;;     (error 
+;;      (let* ((old-buf (current-buffer))
+;; 	    (dir-temp (expand-file-name
+;; 		       (read-file-name "Dir with cscope file "
+;; 				       default-directory default-directory t)))
+;; 	    (clone-temp dir-temp)
+;; 	    (full-name (concat dir-temp "CSCOPE" dbname))
+;; 	    (buf-name (concat "cscope:" dbname " " (file-name-nondirectory
+;; 						    (directory-file-name
+;; 						     dir-temp)))))
+;; 	;
+;; 	; We want to find a cscope buffer if we already have a cscope
+;; 	; started in this directory.  We set buffer-file-name equal to
+;; 	; the directory path with "CSCOPE" appended and use that to
+;; 	; search with.  We eventuall set the buffer name to a shorter
+;; 	; and nicer looking "cscope: dir" where dir is the last
+;; 	; directory in the path
+;; 	;
+;; 	(if (setq cscope-out-buffer (get-file-buffer full-name))
+;; 	    (set-buffer cscope-out-buffer)
+;; 	  (set-buffer
+;; 	   (setq cscope-out-buffer (create-file-buffer buf-name)))
+;; 	  (setq buffer-file-name full-name
+;; 		cscope-clone-dir clone-temp
+;; 		default-directory dir-temp)
+;; 	  (inherit-from-buffer old-buf)
+;; 	  (setq cscope-process nil)))))
+;;   (pop-to-buffer cscope-out-buffer)
+;;   (let ((mod-time (nth 5 (file-attributes "cscope.out")))
+;; 	(dead-proc (or (null cscope-process)
+;; 		       (null (eq (process-status cscope-process) 'run)))))
+;;     (if (and (not dead-proc)
+;; 	     (not (equal cscope-start-time mod-time)))
+;; 	(progn
+;; 	  (kill-process cscope-process)
+;; 	  (setq dead-proc t)))
+;;     (if dead-proc
+;; 	(progn
+;; 	  (if cscope-process
+;; 	      (message "Restarting dead cscope-process...")
+;; 	    (message "Starting new cscope process..."))
+;; 	  (set-process-query-on-exit-flag
+;; 	   (setq cscope-process (start-process "cscope" cscope-out-buffer
+;; 					       cscope-program-name
+;; 					       ""
+;; 					       cscope-clone-dir
+;; 					       "-f" cscope-out)) nil)
+;; 	  (cscope-wait)
+;; 	  (setq cscope-start-time mod-time))))
+;;   (setq buffer-read-only nil)
+;;   (erase-buffer))
+
+;; ;;;###autoload
+;; (defun cscope-wait ()
+;;   "Waits for the cscope process to finish"
+;;   (message "Waiting for cscope...")
+;;   (while (and (eq (process-status cscope-process) 'run)
+;; 	      (progn
+;; 		(goto-char (point-max))
+;; 		(beginning-of-line)
+;; 		(not (looking-at ">> "))))
+;;     (accept-process-output cscope-process)))
+
+;; ;;;###autoload
+;; (defun cscope-format ()
+;;   "Formats the output of cscope to be pretty"
+;;   (let ((longest-file 0)
+;; 	(longest-function 0)
+;; 	(longest-line 0)
+;; 	(counter 0)
+;; 	pat return-value)
+;;     (goto-char (point-max))
+;;     (beginning-of-line)
+;;     (delete-region (point)
+;; 		   (save-excursion
+;; 		     (forward-line 1)
+;; 		     (point)))
+;;     (goto-char (point-min))
+;;     (delete-region (point)
+;; 		   (save-excursion
+;; 		     (forward-line 1)
+;; 		     (point)))
+;;     ;;
+;;     ;; Go through buffer finding the longest filename, function name,
+;;     ;; and line number.
+;;     ;; 
+;;     (while (re-search-forward "^\\([^ ]+\\) \\([^ ]+\\) \\([^ ]+\\) \\(.*\\)"
+;; 			      nil t)
+;;       (let ((filename (file-name-nondirectory
+;; 		       (buffer-substring (match-beginning 1) (match-end 1))))
+;; 	    (function (buffer-substring (match-beginning 2) (match-end 2)))
+;; 	    (linenum (buffer-substring (match-beginning 3) (match-end 3)))
+;; 	    (other (buffer-substring (match-beginning 4) (match-end 4)))
+;; 	    temp)
+;; 	(if (> (setq temp (length filename)) longest-file)
+;; 	    (setq longest-file temp))
+;; 	(if (> (setq temp (length function)) longest-function)
+;; 	    (setq longest-function temp))
+;; 	(if (> (setq temp (length linenum)) longest-line)
+;; 	    (setq longest-line temp))
+;; 	(setq counter (1+ counter))))
+;;     (setq cscope-file-vector (make-vector counter "")
+;; 	  cscope-line-vector (make-vector counter 0)
+;; 	  return-value counter
+;; 	  counter 0)
+
+;;     ;;
+;;     ;; Go through buffer reformatting it to be pretty
+;;     ;;
+;;     (goto-char (point-min))
+;;     (while (re-search-forward "^\\([^ ]+\\) \\([^ ]+\\) \\([^ ]+\\) \\(.*\\)"
+;; 			      nil t)
+;;       (let* ((full-filename
+;; 	      (buffer-substring (match-beginning 1) (match-end 1)))
+;; 	     (filename (file-name-nondirectory full-filename))
+		       
+;; 	     (function (buffer-substring (match-beginning 2) (match-end 2)))
+;; 	     (linenum (buffer-substring (match-beginning 3) (match-end 3)))
+;; 	     (other (buffer-substring (match-beginning 4) (match-end 4)))
+;; 	     (filelen (length filename))
+;; 	     (funclen (length function))
+;; 	     (temp (format "%%3d %%s%%%ds%%s%%%ds%%%ds %%s"
+;; 			   (1+ (- longest-file filelen))
+;; 			   (1+ (- longest-function funclen))
+;; 			   longest-line)))
+;; 	(aset cscope-file-vector counter full-filename)
+;; 	(aset cscope-line-vector counter (string-to-number linenum))
+;; 	(replace-match (format temp (setq counter (1+ counter))
+;; 			       filename " " function " " linenum
+;; 			       other) t t)
+;; 	(put-text-property (save-excursion (beginning-of-line) (point))
+;; 			   (point)
+;; 			   'mouse-face 'highlight)))
+;;     ;;
+;;     ;; Go back through and wrap the long lines in a pretty fashion
+;;     ;;
+;;     (goto-char (point-min))
+;;     (setq pat (concat "\\("
+;; 		      (make-string (- (window-width) 2) ?.)
+;; 		      "\\)\\(.+\\)"))
+;;     (while (re-search-forward pat nil t)
+;;       (replace-match (concat
+;; 		      (buffer-substring (match-beginning 1) (match-end 1))
+;; 		      "\n"
+;; 		      (make-string
+;; 		       (+ longest-file longest-function longest-line 7) ? )
+;; 		      (buffer-substring (match-beginning 2) (match-end 2)))
+;; 		     t t)
+;;       (put-text-property (match-beginning 1) (point) 'mouse-face 'highlight)
+;;       (beginning-of-line))
+;;     (goto-char (point-min))
+;;     (not-modified)
+;;     return-value))
+
+;; (defun kill-cscope-buffers ( buf )
+;;   "Given a cscope buffer, kills all the buffers that have it as their
+;;   cscope-out-buffer."
+;;   (interactive "bBuffer: ")
+;;   (let* ((v (buffer-local-value 'cscope-out-buffer (get-buffer buf))))
+;;     (mapcar (lambda ( x )
+;; 	      (if (eq v (buffer-local-value 'cscope-out-buffer x))
+;; 		  (kill-buffer x)))
+;; 	    (buffer-list))))
+
+;; ;;;###autoload
+;; (defun cscope-find-goodies ( string )
+;;   "Calls the cscope program and sends it STRING, plops into the buffer
+;; and puts the buffer into cscope-mode"
+;;   (interactive "sString: \nP")
+;;   (cscope-init-process "cscope.out" "")
+;;   (send-string cscope-process string)
+;;   (cscope-wait)
+;;   (if (and (= (cscope-format) 1) cscope-auto-go)
+;;       (cscope-goto-from-list nil)
+;;     (pop-to-buffer cscope-out-buffer)
+;;     (cscope-mode)))
+
+;; ;;;###autoload
+;; (defun x-cscope-goto-from-list ( click )
+;;   "Move to where the mouse is and then process the line"
+;;   (interactive "@e")
+;;   (goto-char (posn-point (event-start click)))
+;;   (cscope-goto-from-list nil))
+
+;; ;;;###autoload
+;; (defun x-cscope-goto-from-list-other-window (click)
+;;   "Move to where the mouse is and then process the line"
+;;   (interactive "@e")
+;;   (goto-char (posn-point (event-start click)))
+;;   (cscope-goto-from-list t))
+
+;; ;;;###autoload
+;; (defun x-cscope-view-from-list ( click )
+;;   "Move to where the mouse is and then process the line"
+;;   (interactive "@e")
+;;   (goto-char (posn-point (event-start click)))
+;;   (cscope-view-from-list))
+
+;; ;;
+;; ;; Neat features for c-mode so that we can cscope from the mouse
+;; ;;
+;; ;;;###autoload
+;; (defun x-c-mode-cscope-sym ( click )
+;;   "Find symbol via cscope that mouse is pointing at"
+;;   (interactive "@e")
+;;   (goto-char (posn-point (event-start click)))
+;;   (cscope-find-goodies (concat "0" (get-symbol-non-interactively) "\n")))
+
+;; ;;;###autoload
+;; (defun x-c-mode-cscope-func ( click )
+;;   "Find function via cscope that mouse is pointing at"
+;;   (interactive "@e")
+;;   (goto-char (posn-point (event-start click)))
+;;   (cscope-find-goodies (concat "1" (get-symbol-non-interactively) "\n")))
+
+;; ;;;###autoload
+;; (defun x-cscope-no-op ( click )
+;;   "Function which does nothing"
+;;   (interactive "e"))
+
+;; ;;; From backing list
+;; ;;; \(^.*\)/aix\(...\)/\(5200\|5300\|6100\|7100\)\(-[0-9][0-9]\)\(-[0-9][0-9]\)?\(Gold\|_SP\)
+;; ;;; (defalias 'cscope-\3\4\5 'cscope-\2-process)
+
+;; (defalias 'cscope-5200-06 'cscope-52I-process)
+;; (defalias 'cscope-5200-07 'cscope-52L-process)
+;; (defalias 'cscope-5200-08 'cscope-52M-process)
+;; (defalias 'cscope-5200-09-01 'cscope-52Q-process)
+;; (defalias 'cscope-5200-09-02 'cscope-52Q-process)
+;; (defalias 'cscope-5200-09-03 'cscope-52Q-process)
+;; (defalias 'cscope-5200-09-04 'cscope-52Q-process)
+;; (defalias 'cscope-5200-09-05 'cscope-52Q-process)
+;; (defalias 'cscope-5200-09-06 'cscope-52Q-process)
+;; (defalias 'cscope-5200-09 'cscope-52Q-process)
+;; (defalias 'cscope-5200-10-01 'cscope-52S-process)
+;; (defalias 'cscope-5200-10-02 'cscope-52S-process)
+;; (defalias 'cscope-5200-10-03 'cscope-52S-process)
+;; (defalias 'cscope-5200-10-04 'cscope-52S-process)
+;; (defalias 'cscope-5200-10-05 'cscope-52S-process)
+;; (defalias 'cscope-5200-10-06 'cscope-52S-process)
+;; (defalias 'cscope-5200-10-07 'cscope-52S-process)
+;; (defalias 'cscope-5200-10-08 'cscope-52S-process)
+;; (defalias 'cscope-5200-10 'cscope-52S-process)
+;; (defalias 'cscope-5300-02 'cscope-53A-process)
+;; (defalias 'cscope-5300-03 'cscope-53D-process)
+;; (defalias 'cscope-5300-04 'cscope-53E-process)
+;; (defalias 'cscope-5300-05-01 'cscope-53H-process)
+;; (defalias 'cscope-5300-05-02 'cscope-53H-process)
+;; (defalias 'cscope-5300-05-03 'cscope-53H-process)
+;; (defalias 'cscope-5300-05-04 'cscope-53H-process)
+;; (defalias 'cscope-5300-05-05 'cscope-53H-process)
+;; (defalias 'cscope-5300-05-06 'cscope-53H-process)
+;; (defalias 'cscope-5300-05 'cscope-53H-process)
+;; (defalias 'cscope-5300-06-01 'cscope-53J-process)
+;; (defalias 'cscope-5300-06-02 'cscope-53J-process)
+;; (defalias 'cscope-5300-06-03 'cscope-53J-process)
+;; (defalias 'cscope-5300-06-04 'cscope-53J-process)
+;; (defalias 'cscope-5300-06-05 'cscope-53J-process)
+;; (defalias 'cscope-5300-06-06 'cscope-53J-process)
+;; (defalias 'cscope-5300-06-07 'cscope-53J-process)
+;; (defalias 'cscope-5300-06-08 'cscope-53J-process)
+;; (defalias 'cscope-5300-06-09 'cscope-53J-process)
+;; (defalias 'cscope-5300-06-10 'cscope-53J-process)
+;; (defalias 'cscope-5300-06-11 'cscope-53J-process)
+;; (defalias 'cscope-5300-06-12 'cscope-53J-process)
+;; (defalias 'cscope-5300-06 'cscope-53J-process)
+;; (defalias 'cscope-5300-07-01 'cscope-53L-process)
+;; (defalias 'cscope-5300-07-02 'cscope-53L-process)
+;; (defalias 'cscope-5300-07-03 'cscope-53L-process)
+;; (defalias 'cscope-5300-07-04 'cscope-53L-process)
+;; (defalias 'cscope-5300-07-05 'cscope-53L-process)
+;; (defalias 'cscope-5300-07-06 'cscope-53L-process)
+;; (defalias 'cscope-5300-07-07 'cscope-53L-process)
+;; (defalias 'cscope-5300-07-08 'cscope-53L-process)
+;; (defalias 'cscope-5300-07-09 'cscope-53L-process)
+;; (defalias 'cscope-5300-07-10 'cscope-53L-process)
+;; (defalias 'cscope-5300-07 'cscope-53L-process)
+;; (defalias 'cscope-5300-08-01 'cscope-53N-process)
+;; (defalias 'cscope-5300-08-02 'cscope-53N-process)
+;; (defalias 'cscope-5300-08-03 'cscope-53N-process)
+;; (defalias 'cscope-5300-08-04 'cscope-53N-process)
+;; (defalias 'cscope-5300-08-05 'cscope-53N-process)
+;; (defalias 'cscope-5300-08-06 'cscope-53N-process)
+;; (defalias 'cscope-5300-08-07 'cscope-53N-process)
+;; (defalias 'cscope-5300-08-08 'cscope-53N-process)
+;; (defalias 'cscope-5300-08-09 'cscope-53N-process)
+;; (defalias 'cscope-5300-08-10 'cscope-53N-process)
+;; (defalias 'cscope-5300-08 'cscope-53N-process)
+;; (defalias 'cscope-5300-09-01 'cscope-53Q-process)
+;; (defalias 'cscope-5300-09-02 'cscope-53Q-process)
+;; (defalias 'cscope-5300-09-03 'cscope-53Q-process)
+;; (defalias 'cscope-5300-09-04 'cscope-53Q-process)
+;; (defalias 'cscope-5300-09-05 'cscope-53Q-process)
+;; (defalias 'cscope-5300-09-06 'cscope-53Q-process)
+;; (defalias 'cscope-5300-09-07 'cscope-53Q-process)
+;; (defalias 'cscope-5300-09-08 'cscope-53Q-process)
+;; (defalias 'cscope-5300-09 'cscope-53Q-process)
+;; (defalias 'cscope-5300-10-01 'cscope-53S-process)
+;; (defalias 'cscope-5300-10-02 'cscope-53S-process)
+;; (defalias 'cscope-5300-10-03 'cscope-53S-process)
+;; (defalias 'cscope-5300-10-04 'cscope-53S-process)
+;; (defalias 'cscope-5300-10-05 'cscope-53S-process)
+;; (defalias 'cscope-5300-10-06 'cscope-53S-process)
+;; (defalias 'cscope-5300-10-07 'cscope-53S-process)
+;; (defalias 'cscope-5300-10 'cscope-53S-process)
+;; (defalias 'cscope-5300-11-01 'cscope-53V-process)
+;; (defalias 'cscope-5300-11-02 'cscope-53V-process)
+;; (defalias 'cscope-5300-11-03 'cscope-53V-process)
+;; (defalias 'cscope-5300-11-04 'cscope-53V-process)
+;; (defalias 'cscope-5300-11-05 'cscope-53V-process)
+;; (defalias 'cscope-5300-11-06 'cscope-53V-process)
+;; (defalias 'cscope-5300-11-07 'cscope-53V-process)
+;; (defalias 'cscope-5300-11-08 'cscope-53V-process)
+;; (defalias 'cscope-5300-11 'cscope-53V-process)
+;; (defalias 'cscope-5300-12-01 'cscope-53X-process)
+;; (defalias 'cscope-5300-12-02 'cscope-53X-process)
+;; (defalias 'cscope-5300-12-03 'cscope-53X-process)
+;; (defalias 'cscope-5300-12-04 'cscope-53X-process)
+;; (defalias 'cscope-5300-12-05 'cscope-53X-process)
+;; (defalias 'cscope-5300-12-06 'cscope-53X-process)
+;; (defalias 'cscope-5300-12-07 'cscope-53X-process)
+;; (defalias 'cscope-5300-12-08 'cscope-53X-process)
+;; (defalias 'cscope-5300-12 'cscope-53X-process)
+;; (defalias 'cscope-6100-00-01 'cscope-540-process)
+;; (defalias 'cscope-6100-00-02 'cscope-540-process)
+;; (defalias 'cscope-6100-00-03 'cscope-540-process)
+;; (defalias 'cscope-6100-00-04 'cscope-540-process)
+;; (defalias 'cscope-6100-00-05 'cscope-540-process)
+;; (defalias 'cscope-6100-00-06 'cscope-540-process)
+;; (defalias 'cscope-6100-00-07 'cscope-540-process)
+;; (defalias 'cscope-6100-00-08 'cscope-540-process)
+;; (defalias 'cscope-6100-00-09 'cscope-540-process)
+;; (defalias 'cscope-6100-00-10 'cscope-540-process)
+;; (defalias 'cscope-6100-00-11 'cscope-540-process)
+;; (defalias 'cscope-6100-00-01 'cscope-610-process)
+;; (defalias 'cscope-6100-00-02 'cscope-610-process)
+;; (defalias 'cscope-6100-00-03 'cscope-610-process)
+;; (defalias 'cscope-6100-00-04 'cscope-610-process)
+;; (defalias 'cscope-6100-00-05 'cscope-610-process)
+;; (defalias 'cscope-6100-00-06 'cscope-610-process)
+;; (defalias 'cscope-6100-00-07 'cscope-610-process)
+;; (defalias 'cscope-6100-00-08 'cscope-610-process)
+;; (defalias 'cscope-6100-00-09 'cscope-610-process)
+;; (defalias 'cscope-6100-00-10 'cscope-610-process)
+;; (defalias 'cscope-6100-00-11 'cscope-610-process)
+;; (defalias 'cscope-6100-01-01 'cscope-61B-process)
+;; (defalias 'cscope-6100-01-02 'cscope-61B-process)
+;; (defalias 'cscope-6100-01-03 'cscope-61B-process)
+;; (defalias 'cscope-6100-01-04 'cscope-61B-process)
+;; (defalias 'cscope-6100-01-05 'cscope-61B-process)
+;; (defalias 'cscope-6100-01-06 'cscope-61B-process)
+;; (defalias 'cscope-6100-01-07 'cscope-61B-process)
+;; (defalias 'cscope-6100-01-08 'cscope-61B-process)
+;; (defalias 'cscope-6100-01-09 'cscope-61B-process)
+;; (defalias 'cscope-6100-01 'cscope-61B-process)
+;; (defalias 'cscope-6100-02-01 'cscope-61D-process)
+;; (defalias 'cscope-6100-02-02 'cscope-61D-process)
+;; (defalias 'cscope-6100-02-03 'cscope-61D-process)
+;; (defalias 'cscope-6100-02-04 'cscope-61D-process)
+;; (defalias 'cscope-6100-02-05 'cscope-61D-process)
+;; (defalias 'cscope-6100-02-06 'cscope-61D-process)
+;; (defalias 'cscope-6100-02-07 'cscope-61D-process)
+;; (defalias 'cscope-6100-02-08 'cscope-61D-process)
+;; (defalias 'cscope-6100-02-09 'cscope-61D-process)
+;; (defalias 'cscope-6100-02-10 'cscope-61D-process)
+;; (defalias 'cscope-6100-02 'cscope-61D-process)
+;; (defalias 'cscope-6100-03-01 'cscope-61F-process)
+;; (defalias 'cscope-6100-03-02 'cscope-61F-process)
+;; (defalias 'cscope-6100-03-03 'cscope-61F-process)
+;; (defalias 'cscope-6100-03-04 'cscope-61F-process)
+;; (defalias 'cscope-6100-03-05 'cscope-61F-process)
+;; (defalias 'cscope-6100-03-06 'cscope-61F-process)
+;; (defalias 'cscope-6100-03-07 'cscope-61F-process)
+;; (defalias 'cscope-6100-03-08 'cscope-61F-process)
+;; (defalias 'cscope-6100-03-09 'cscope-61F-process)
+;; (defalias 'cscope-6100-03-10 'cscope-61F-process)
+;; (defalias 'cscope-6100-03 'cscope-61F-process)
+;; (defalias 'cscope-6100-04-01 'cscope-61H-process)
+;; (defalias 'cscope-6100-04-02 'cscope-61H-process)
+;; (defalias 'cscope-6100-04-03 'cscope-61H-process)
+;; (defalias 'cscope-6100-04-04 'cscope-61H-process)
+;; (defalias 'cscope-6100-04-05 'cscope-61H-process)
+;; (defalias 'cscope-6100-04-06 'cscope-61H-process)
+;; (defalias 'cscope-6100-04-07 'cscope-61H-process)
+;; (defalias 'cscope-6100-04-08 'cscope-61H-process)
+;; (defalias 'cscope-6100-04-09 'cscope-61H-process)
+;; (defalias 'cscope-6100-04-10 'cscope-61H-process)
+;; (defalias 'cscope-6100-04-11 'cscope-61H-process)
+;; (defalias 'cscope-6100-04 'cscope-61H-process)
+;; (defalias 'cscope-6100-05-01 'cscope-61J-process)
+;; (defalias 'cscope-6100-05-02 'cscope-61J-process)
+;; (defalias 'cscope-6100-05-03 'cscope-61J-process)
+;; (defalias 'cscope-6100-05-04 'cscope-61J-process)
+;; (defalias 'cscope-6100-05-05 'cscope-61J-process)
+;; (defalias 'cscope-6100-05-06 'cscope-61J-process)
+;; (defalias 'cscope-6100-05-07 'cscope-61J-process)
+;; (defalias 'cscope-6100-05-08 'cscope-61J-process)
+;; (defalias 'cscope-6100-05-09 'cscope-61J-process)
+;; (defalias 'cscope-6100-05 'cscope-61J-process)
+;; (defalias 'cscope-6100-06-01 'cscope-61L-process)
+;; (defalias 'cscope-6100-06-02 'cscope-61L-process)
+;; (defalias 'cscope-6100-06-03 'cscope-61L-process)
+;; (defalias 'cscope-6100-06-04 'cscope-61L-process)
+;; (defalias 'cscope-6100-06 'cscope-61L-process)
+;; (defalias 'cscope-6100-06-05 'cscope-61N-process)
+;; (defalias 'cscope-6100-06-06 'cscope-61N-process)
+;; (defalias 'cscope-6100-06-07 'cscope-61N-process)
+;; (defalias 'cscope-6100-06-08 'cscope-61N-process)
+;; (defalias 'cscope-6100-06-09 'cscope-61N-process)
+;; (defalias 'cscope-6100-06-10 'cscope-61N-process)
+;; (defalias 'cscope-6100-06-11 'cscope-61N-process)
+;; (defalias 'cscope-6100-06-12 'cscope-61N-process)
+;; (defalias 'cscope-6100-07-01 'cscope-61Q-process)
+;; (defalias 'cscope-6100-07-02 'cscope-61Q-process)
+;; (defalias 'cscope-6100-07-03 'cscope-61Q-process)
+;; (defalias 'cscope-6100-07 'cscope-61Q-process)
+;; (defalias 'cscope-6100-07-04 'cscope-61S-process)
+;; (defalias 'cscope-6100-07-05 'cscope-61S-process)
+;; (defalias 'cscope-6100-07-06 'cscope-61S-process)
+;; (defalias 'cscope-6100-07-07 'cscope-61S-process)
+;; (defalias 'cscope-6100-07-08 'cscope-61S-process)
+;; (defalias 'cscope-6100-08-01 'cscope-61V-process)
+;; (defalias 'cscope-6100-08 'cscope-61V-process)
+;; (defalias 'cscope-6100-08-02 'cscope-61X-process)
+;; (defalias 'cscope-6100-08-03 'cscope-61X-process)
+;; (defalias 'cscope-7100-00-01 'cscope-710-process)
+;; (defalias 'cscope-7100-00-02 'cscope-710-process)
+;; (defalias 'cscope-7100-00-03 'cscope-71B-process)
+;; (defalias 'cscope-7100-00-04 'cscope-71B-process)
+;; (defalias 'cscope-7100-00-05 'cscope-71B-process)
+;; (defalias 'cscope-7100-00-06 'cscope-71B-process)
+;; (defalias 'cscope-7100-00-07 'cscope-71B-process)
+;; (defalias 'cscope-7100-00-08 'cscope-71B-process)
+;; (defalias 'cscope-7100-00-09 'cscope-71B-process)
+;; (defalias 'cscope-7100-00-10 'cscope-71B-process)
+;; (defalias 'cscope-7100-01-01 'cscope-71D-process)
+;; (defalias 'cscope-7100-01-02 'cscope-71D-process)
+;; (defalias 'cscope-7100-01-03 'cscope-71D-process)
+;; (defalias 'cscope-7100-01 'cscope-71D-process)
+;; (defalias 'cscope-7100-01-04 'cscope-71F-process)
+;; (defalias 'cscope-7100-01-05 'cscope-71F-process)
+;; (defalias 'cscope-7100-01-06 'cscope-71F-process)
+;; (defalias 'cscope-7100-01-07 'cscope-71F-process)
+;; (defalias 'cscope-7100-01-08 'cscope-71F-process)
+;; (defalias 'cscope-7100-02-01 'cscope-71H-process)
+;; (defalias 'cscope-7100-02 'cscope-71H-process)
+;; (defalias 'cscope-7100-02-02 'cscope-71J-process)
+;; (defalias 'cscope-7100-02-03 'cscope-71J-process)
 
 (provide 'cscope)

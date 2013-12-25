@@ -29,6 +29,6 @@ the same mechanism for the default as get-symbol-interactively"
   (goto-char (posn-point (event-start click)))
   (find-tag (get-symbol-non-interactively)))
 
-(global-set-key [C-S-mouse-3] 'x-find-tag)
+;; (global-set-key [C-S-mouse-3] 'x-find-tag)
 
 (provide 'ptags)
