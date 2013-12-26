@@ -40,7 +40,17 @@
 							rest)))))))
     ;; If we found something, we now need to set everything up right.
     (if found
-	(find-alternate-file new-path))))
+	(progn
+	  (kill-buffer (current-buffer))
+	  (let ((new-buf (get-file-buffer new-path)))
+	    (if new-buf
+		;; no need to verify last-modified time for this!
+		(set-buffer new-buf)
+	      (set-buffer (create-file-buffer new-path))
+	      (erase-buffer)
+	      (insert-file-contents new-path t)))
+	  t)
+      nil)))
 
 (add-hook 'find-file-not-found-functions 'osf-dce-file-not-found-hook)
 
