@@ -141,11 +141,6 @@ entry"
   "Obarray containing per cscope instance variables")
 (make-variable-buffer-inherited 'cscope-obarray)
 
-(defun play ()
-  (interactive)
-  (let ((obarray cscope-obarray))
-    (call-interactively 'describe-variable)))
-
 (defvar cscope-mode-menu nil
   "The Cscope menu")
 
@@ -251,7 +246,7 @@ setter convenience methods."
 	 ,sym-doc
 	 (let ((sym (intern ,name-string cscope-obarray)))
 	   (unless (boundp sym)
-	     (put 'variable-documentation sym ,doc)
+	     (put sym 'variable-documentation ,doc)
 	     (set sym ,init))
 	   sym))
        (defun ,getter-name ()
@@ -370,7 +365,8 @@ by the new buffer."
   (let ((buffer (get-buffer name)))
     (unless buffer
       (setq cscope-obarray (make-vector 3 0))
-      (setq buffer (get-buffer-create name)))
+      (setq buffer (get-buffer-create name))
+      (buffer-disable-undo buffer))
     buffer))
 
 (defun cscope-init-process ( cscope options dir database )
@@ -531,24 +527,37 @@ being called."
 			       other) t t)
 	(put-text-property (save-excursion (beginning-of-line) (point))
 			   (point)
-			   'mouse-face 'highlight)))
+			   'mouse-face 'highlight)
+	;; (if (= (mod counter 2) 0)
+	;;     (put-text-property (save-excursion (beginning-of-line) (point))
+	;; 		       (point)
+	;; 		       'face '(:background "white smoke")))
+	))
     ;;
     ;; Go back through and wrap the long lines in a pretty fashion
     ;;
-    (goto-char (point-min))
-    (setq pat (concat "\\("
-		      (make-string (- (window-width) 2) ?.)
-		      "\\)\\(.+\\)"))
-    (while (re-search-forward pat nil t)
-      (replace-match (concat
-		      (buffer-substring (match-beginning 1) (match-end 1))
-		      "\n"
-		      (make-string
-		       (+ longest-file longest-function longest-line 7) ? )
-		      (buffer-substring (match-beginning 2) (match-end 2)))
-		     t t)
-      (put-text-property (match-beginning 1) (point) 'mouse-face 'highlight)
-      (beginning-of-line))
+    ;; I no longer like this.  Too often, the left margin is wider
+    ;; than the window and this creates an infinite loop.  I considered
+    ;; various alternatives.  For example, it is possible to add a
+    ;; property so that wrap automatically moves the a column but it
+    ;; too suffers from an infinite loop of the wrap column is bigger
+    ;; than the window size.  For now, lets just leave the display
+    ;; with lines truncated and see how it goes.
+    ;;
+    ;; (goto-char (point-min))
+    ;; (setq pat (concat "\\("
+    ;; 		      (make-string (- (window-width) 2) ?.)
+    ;; 		      "\\)\\(.+\\)"))
+    ;; (while (re-search-forward pat nil t)
+    ;;   (replace-match (concat
+    ;; 		      (buffer-substring (match-beginning 1) (match-end 1))
+    ;; 		      "\n"
+    ;; 		      (make-string
+    ;; 		       (+ longest-file longest-function longest-line 7) ? )
+    ;; 		      (buffer-substring (match-beginning 2) (match-end 2)))
+    ;; 		     t t)
+    ;;   (put-text-property (match-beginning 1) (point) 'mouse-face 'highlight)
+    ;;   (beginning-of-line))
     (goto-char (point-min))
     (set-buffer-modified-p nil)
     return-value))
