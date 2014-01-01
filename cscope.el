@@ -141,36 +141,20 @@ entry"
   "Obarray containing per cscope instance variables")
 (make-variable-buffer-inherited 'cscope-obarray)
 
-(defvar cscope-mode-map 
-  (let ((map (make-sparse-keymap)))
-    (define-key map "n" 'next-line)
-    (define-key map " " 'next-line)
-    (define-key map "p" 'previous-line)
-    (define-key map "\177" 'previous-line)
-    (define-key map "v" 'cscope-view-from-list)
-    (define-key map "q" 'delete-window)
-    (define-key map "e" 'cscope-goto-from-list)
-    (define-key map [mouse-1] 'cscope-mouse-goto-from-list-other-window)
-    (define-key map [drag-mouse-1] 'cscope-mouse-no-op)
-    (define-key map [down-mouse-1] 'cscope-mouse-no-op)
-    (define-key map [mouse-2] 'cscope-mouse-goto-from-list)
-    (define-key map [drag-mouse-2] 'cscope-mouse-no-op)
-    (define-key map [down-mouse-2] 'cscope-mouse-no-op)
-    (define-key map [mouse-3] 'cscope-mouse-view-from-list)
-    (define-key map [drag-mouse-3] 'cscope-mouse-no-op)
-    (define-key map [down-mouse-3] 'cscope-mouse-no-op)
-    map)
-  "Keymap used in cscope mode.")
+(defun play ()
+  (interactive)
+  (let ((obarray cscope-obarray))
+    (call-interactively 'describe-variable)))
 
-(defvar cscope-c-minor-mode-menu nil
+(defvar cscope-mode-menu nil
   "The Cscope menu")
 
-(defvar cscope-c-mode-map
+(defvar cscope-mode-map
   (let* ((parent (make-sparse-keymap))
 	 (child (make-sparse-keymap)))
-    (easy-menu-define cscope-c-minor-mode-menu
+    (easy-menu-define cscope-mode-menu
       parent
-      "Menu used when `cscope-c-mode' is active."
+      "Menu used when `cscope-mode' is active."
       '("CScope"
 	["Find references" cscope-menu-find-references 
 	 :help "Find references to the SYMBOL at point"]
@@ -217,7 +201,28 @@ entry"
     (define-key child (kbd "i") 'cscope-find-file-include)
     (define-key child (kbd "s") 'cscope-find-references)
     parent)
-  "Keymap used for cscope-c minor mode")
+  "Keymap used for cscope mode")
+
+(defvar cscope-result-mode-map 
+  (let ((map (make-sparse-keymap)))
+    (define-key map "n" 'next-line)
+    (define-key map " " 'next-line)
+    (define-key map "p" 'previous-line)
+    (define-key map "\177" 'previous-line)
+    (define-key map "v" 'cscope-view-from-list)
+    (define-key map "q" 'delete-window)
+    (define-key map "e" 'cscope-goto-from-list)
+    (define-key map [mouse-1] 'cscope-mouse-goto-from-list-other-window)
+    (define-key map [drag-mouse-1] 'cscope-mouse-no-op)
+    (define-key map [down-mouse-1] 'cscope-mouse-no-op)
+    (define-key map [mouse-2] 'cscope-mouse-goto-from-list)
+    (define-key map [drag-mouse-2] 'cscope-mouse-no-op)
+    (define-key map [down-mouse-2] 'cscope-mouse-no-op)
+    (define-key map [mouse-3] 'cscope-mouse-view-from-list)
+    (define-key map [drag-mouse-3] 'cscope-mouse-no-op)
+    (define-key map [down-mouse-3] 'cscope-mouse-no-op)
+    map)
+  "Keymap used in cscope mode.")
 
 ;; The variables that cscope uses are stored away in `cscope-obarray'.
 ;; This macro provides a way to define the variable (interned within
@@ -376,6 +381,10 @@ process will be what `cscope-buffer-name' returns when passed the same
 four args passed to this function.  If the buffer already exists and
 if the process is still running, a new buffer and new process is not
 created."
+  ;; (message "cscope-init-process called: cscope='%s' options='%s' dir='%s' database='%s'"
+  ;; 	   cscope options dir database)
+  (setq dir (expand-file-name dir)
+	database (expand-file-name database))
   (let* ((buf (cscope-get-buffer-create (cscope-buffer-name cscope options dir database)))
 	 (process (get-buffer-process buf))
 	 (file-mod-time (nth 5 (file-attributes database)))
@@ -431,19 +440,20 @@ created."
 	    (setq buffer-read-only t)
 	    (set-buffer-modified-p nil)
 
-	    ;; Now, go into cscope-mode
-	    (cscope-mode))))))
+	    ;; Now, go into cscope-result-mode
+	    (cscope-result-mode))))))
 
-(define-minor-mode cscope-c-mode
+(define-minor-mode cscope-mode
   "Minor mode for C files that use cscope
 
-\\{cscope-c-mode-map}"
-  :lighter " scope")
+\\{cscope-mode-map}"
+  :lighter " Cscope")
 
-(define-derived-mode cscope-mode nil "C-scope"
+(define-derived-mode cscope-result-mode nil "C-scope"
   "mode the `cscope-out-buffer' is set to.
 
-\\{cscope-mode-map}"
+\\{cscope-result-mode-map}"
+  (cscope-mode)
   (setq truncate-lines t))
 
 (defun cscope-format ()
@@ -731,8 +741,8 @@ location of the point."
   "9"
   "Find assignments to symbol: ")
 
-(add-hook 'c-mode-hook 'cscope-c-mode)
-(add-hook 'c++-mode-hook 'cscope-c-mode)
+(add-hook 'c-mode-hook 'cscope-mode)
+(add-hook 'c++-mode-hook 'cscope-mode)
 
 ;;; END END
 
