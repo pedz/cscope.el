@@ -41,6 +41,25 @@
 ;; values.  The user can also create functions such as "cscope-happy"
 ;; that starts the cscope for the Happy project without further
 ;; interaction.
+;;
+;; There is one "inherited" buffer which is `cscope-obarray'.  All the
+;; buffers that should use a particular cscope process will have their
+;; buffer local value of `cscope-obarray' pointing to the same
+;; obarray.  This is accomplished through the `inherit' package.
+;; Within `cscope-obarray' is a set of symbols (variables) that are
+;; assigned when the cscope process is started.  One example is the
+;; variable `cscope-out-buffer' which will not exist in the global
+;; obarray but will be in `cscope-obarray'.  Three functions will be
+;; created (in the global obarray): the function `cscope-out-buffer'
+;; which will return the symbol interned in `cscope-obarray', the
+;; function `cscope-out-buffer-get' which will return the value of the
+;; symbol and `cscope-out-buffer-set' which will set the value of the
+;; symbol.
+;;
+;; I think of `cscope-obarray' as an instance of an object and the
+;; variables in it as attributes within the object.  All the buffers
+;; using the same set of values for the cscope process, output buffer,
+;; etc will point to the same `cscope-obarray' "instance".
 
 (require 'inherit)
 (require 'ptags)
@@ -116,21 +135,11 @@ entry"
   :type 'string
   :group 'cscope-mode)
 
-;; We define one inherited variable that points back to the parent
-;; cscope buffer which will be the buffer that has the cscope running
-;; in it.
-(defvar cscope-out-buffer nil
-  "Buffer associated with the cscope process")
-(make-variable-buffer-inherited 'cscope-out-buffer)
-
-;; Other global variables
-(defvar cscope-file-vector nil
-  "Holds the full path names for the files listed in the cscope output")
-(make-variable-buffer-local 'cscope-file-vector)
-
-(defvar cscope-line-vector nil
-  "Holds the line numbers for the lines listed in the cscope output")
-(make-variable-buffer-local 'cscope-line-vector)
+;; We define one inhertied variable which is an obarray that will
+;; contain the half dozen or so variables needed to drive cscope.
+(defvar cscope-obarray nil
+  "Obarray containing per cscope instance variables")
+(make-variable-buffer-inherited 'cscope-obarray)
 
 (defvar cscope-mode-map 
   (let ((map (make-sparse-keymap)))
@@ -210,37 +219,51 @@ entry"
     parent)
   "Keymap used for cscope-c minor mode")
 
-;;; Define a set of variables that are local to the cscope out buffer.
-;;; Other buffers get the value by querying the value.
+;; The variables that cscope uses are stored away in `cscope-obarray'.
+;; This macro provides a way to define the variable (interned within
+;; `cscope-obarray') as well as convenient getter and setter methods.
 (defmacro cscope-defvar (name init doc)
-  "Defines a variable via `defvar' NAME INIT DOC along with a
-getter for NAME that fetches the buffer local value from the
-buffer the function `cscope-out-buffer' returns."
+  "Defines three functions.  One returns the symbol NAME within
+the current `cscope-obarray' giving it an initial value of INIT
+and a documentation string of DOC.  The other two are getter and
+setter convenience methods."
   (declare (indent defun))
-  (let ((getter-name (intern (format "get-%s" name)))
+  (let ((name-string (format "%s" name))
+	(sym-name (intern (format "%s-sym" name)))
+	(sym-doc (format
+		 "Retrieves the symbol `%s' from `cscope-obarray'."
+		 name))
+	(getter-name (intern (format "%s-get" name)))
 	(getter-doc (format
-		 "Retrieves the variable `%s' from `get-cscope-out-buffer'."
+		 "Retrieves the value of the variable `%s' from `cscope-obarray'."
 		 name))
 	(setter-doc (format
-		 "Sets the variable `%s' in buffer `get-cscope-out-buffer'."
+		 "Sets the variable `%s' within `cscope-obarray'."
 		 name))
-	(setter-name (intern (format "set-%s" name))))
+	(setter-name (intern (format "%s-set" name))))
     `(progn
-       (defvar ,name ,init ,doc)
-       (make-variable-buffer-local ',name)
+       (defun ,sym-name ()
+	 ,sym-doc
+	 (let ((sym (intern ,name-string cscope-obarray)))
+	   (unless (boundp sym)
+	     (put 'variable-documentation sym ,doc)
+	     (set sym ,init))
+	   sym))
        (defun ,getter-name ()
 	 ,getter-doc
-	 (buffer-local-value ',name (get-cscope-out-buffer)))
+	 (symbol-value (,sym-name)))
        (defun ,setter-name (val)
 	 ,setter-doc
-	 (with-current-buffer (get-cscope-out-buffer)
-	   (set ',name val))))))
+	 (set (,sym-name) val)))))
+
+(cscope-defvar cscope-out-buffer nil
+  "The cscope output buffer.")
 
 (cscope-defvar cscope-process nil
   "The cscope process.")
 
 (cscope-defvar cscope-process-cscope "cscope"
-  "The cscope executable to use.")
+  "Path to the cscope executable.")
 
 (cscope-defvar cscope-process-options "-q -d"
   "Options to pass to cscope in addition to the -P path and -f path
@@ -260,23 +283,27 @@ process via the -f option")
   "The file modification time of the cscope.out file when
 the cscope process was started.")
 
+(cscope-defvar cscope-file-vector nil
+  "Holds the full path names for the files listed in the cscope output")
+
+(cscope-defvar cscope-line-vector nil
+  "Holds the line numbers for the lines listed in the cscope output")
+
 (defun cscope-needs-to-be-started ()
   "Returns true if the cscope has never been started, has died and
   needs to be restarted, or if the database has been updated implying
   that the cscope process needs to be killed and then restarted."
-  (let* (process database file-mod-time)
+  (let* (process database file-mod-time buffer)
     (not (and
-	  (bufferp cscope-out-buffer)					;cscope-out-buffer has been set
-	  (buffer-name cscope-out-buffer)				;cscope-out-buffer still live
-	  (setq process (get-buffer-process cscope-out-buffer)) 	;has a process
+	  (setq buffer (cscope-out-buffer-get))
+	  (bufferp buffer)						;cscope-out-buffer has been set
+	  (buffer-name buffer)						;cscope-out-buffer still live
+	  (setq process (get-buffer-process buffer)) 			;has a process
+	  (eq process (cscope-process-get))				;same process as before
 	  (eq (process-status process) 'run)				;process still running
-	  (setq database
-		(buffer-local-value
-		 'cscope-process-database cscope-out-buffer))		;database path
+	  (setq database (cscope-process-database-get))			;database path
 	  (setq file-mod-time (nth 5 (file-attributes database)))	;get database mod time
-	  (equal (buffer-local-value					;mod time ok
-		  'cscope-process-start-time cscope-out-buffer)
-		 file-mod-time)))))
+	  (equal (cscope-process-start-time-get) file-mod-time)))))	;mod time hasn't changed
 
 ;; Stolen from rspec-mode.el
 (defun cscope-parent-directory (a-directory)
@@ -300,11 +327,15 @@ if FILE is not found."
 	dir
       nil)))
 
-(defun get-cscope-out-buffer ()
-  "Returns the variable `cscope-out-buffer'.
-An error is signaled if cscope-out-buffer is not set."
+(defun cscope-get-or-create-out-buffer ()
+  "Returns `cscope-out-buffer' after validating it.
+If `cscope-needs-to-be-started', then a new cscope process is kicked
+off using `cscope-dir-patterns' to determine the values to use to
+start the cscope process.  If no match is found in
+`cscope-dir-patterns', an error is signaled."
   (if (cscope-needs-to-be-started)
-      (let ((var cscope-dir-patterns))
+      (let ((var cscope-dir-patterns)
+	    temp)
 	(while (not (or (null var)
 			(string-match (nth 0 (nth 0 var)) default-directory)))
 	  (setq var (cdr var)))
@@ -316,8 +347,8 @@ An error is signaled if cscope-out-buffer is not set."
 	       (eval (nth 2 temp))
 	       (eval (nth 3 temp))
 	       (eval (nth 4 temp))))
-	  (error "`cscope-out-buffer' is not set or points to a buffer that has been killed"))))
-  cscope-out-buffer)
+	  (error "`cscope-dir-patters' did not match current directory"))))
+  (cscope-out-buffer-get))
 
 (defun cscope-buffer-name (cscope options dir database)
   "Returns the name of cscope out buffer.
@@ -327,6 +358,16 @@ Given CSCOPE, OPTIONS, DIR, and DATABASE, the name for the
 	  (file-name-nondirectory (directory-file-name (expand-file-name dir)))
 	  (file-name-nondirectory (directory-file-name (expand-file-name database)))))
 
+(defun cscope-get-buffer-create (name)
+  "If a new buffer is created, a new cscope-obarray is also created.
+The new obarray is created in the exiting buffer and will be inherited
+by the new buffer."
+  (let ((buffer (get-buffer name)))
+    (unless buffer
+      (setq cscope-obarray (make-vector 3 0))
+      (setq buffer (get-buffer-create name)))
+    buffer))
+
 (defun cscope-init-process ( cscope options dir database )
   "Initialize a cscope process using CSCOPE OPTIONS DIR and DATABASE.
 This is not an interactive command.  The intent is interactive
@@ -335,7 +376,7 @@ process will be what `cscope-buffer-name' returns when passed the same
 four args passed to this function.  If the buffer already exists and
 if the process is still running, a new buffer and new process is not
 created."
-  (let* ((buf (get-buffer-create (cscope-buffer-name cscope options dir database)))
+  (let* ((buf (cscope-get-buffer-create (cscope-buffer-name cscope options dir database)))
 	 (process (get-buffer-process buf))
 	 (file-mod-time (nth 5 (file-attributes database)))
 	 (dead-process (or (null process)
@@ -347,17 +388,18 @@ created."
 			 dir
 			 "-f"
 			 database))))
-    ;; Current buffer's cscope-out-buffer points to the new buffer
-    (setq cscope-out-buffer buf)
 
-    ;; We need to add a feature that compares the time stamp of the
-    ;; database (file-mod-time) with a saved value.  If we discover
-    ;; that the database has been updated, we should stop and restart
-    ;; the cscope process.  Various features could be added along
-    ;; these lines including a method to rebuild the cscope database
-    ;; from inside emacs but there are some obstacles to this.  For
-    ;; now, we'll just leave this comment.
-    ;;
+    ;; Kill current process if the cscope.out file has been modified.
+    (unless (or (not process)
+		dead-process
+		(equal (cscope-process-start-time-get) file-mod-time))
+      (message "Killing cscope process")
+      (kill-process process)
+      (with-current-buffer buf
+	(setq buffer-read-only nil)
+	(accept-process-output process))
+      (setq dead-process t))
+
     ;; If process is nil or dead, we need to start the process.
     (if dead-process
 	(progn
@@ -372,15 +414,15 @@ created."
 	  ;; for the new buffer, set the cscope specific variables
 	  ;; within the new buffer.  Note that cscope-out-buffer in
 	  ;; buf points to itself (the new buffer)
+	  (cscope-out-buffer-set buf)
+	  (cscope-process-set process)
+	  (cscope-process-cscope-set cscope)
+	  (cscope-process-options-set options)
+	  (cscope-process-dir-set dir)
+	  (cscope-process-database-set database)
+	  (cscope-process-start-time-set file-mod-time)
 	  (with-current-buffer buf
-	    (setq cscope-out-buffer buf
-		  cscope-process process
-		  cscope-process-cscope cscope
-		  cscope-process-options options
-		  cscope-process-dir dir
-		  cscope-process-database database
-		  cscope-process-start-time file-mod-time
-		  default-directory dir)
+	    (setq default-directory dir)
 	    (cscope-wait)
 
 	    ;; This is a bit silly but I want the buffer to look nice
@@ -448,9 +490,9 @@ being called."
 	(if (> (setq temp (length linenum)) longest-line)
 	    (setq longest-line temp))
 	(setq counter (1+ counter))))
-    (setq cscope-file-vector (make-vector counter "")
-	  cscope-line-vector (make-vector counter 0)
-	  return-value counter
+    (cscope-file-vector-set (make-vector counter ""))
+    (cscope-line-vector-set (make-vector counter 0))
+    (setq return-value counter
 	  counter 0)
 
     ;;
@@ -472,8 +514,8 @@ being called."
 			   (1+ (- longest-file filelen))
 			   (1+ (- longest-function funclen))
 			   longest-line)))
-	(aset cscope-file-vector counter full-filename)
-	(aset cscope-line-vector counter (string-to-number linenum))
+	(aset (cscope-file-vector-get) counter full-filename)
+	(aset (cscope-line-vector-get) counter (string-to-number linenum))
 	(replace-match (format temp (setq counter (1+ counter))
 			       filename " " function " " linenum
 			       other) t t)
@@ -502,25 +544,25 @@ being called."
     return-value))
 
 (defun cscope-wait ()
-  "Waits for the cscope process to finish.
-`current-buffer' must be set to the proper `cscope-out-buffer'."
-  (message "Waiting for cscope...")
-  (while (and (eq (process-status cscope-process) 'run)
-	      (progn
-		(goto-char (point-max))
-		(beginning-of-line)
-		(not (looking-at ">> "))))
-    (accept-process-output cscope-process)))
+  "Waits for the cscope process to finish and print the \">> \" prompt."
+  (let ((process (cscope-process-get)))
+    (with-current-buffer (cscope-out-buffer-get)
+      (while (and (eq (process-status process) 'run)
+		  (progn
+		    (goto-char (point-max))
+		    (beginning-of-line)
+		    (not (looking-at ">> "))))
+	(accept-process-output process)))))
 
 (defun cscope-send-string ( string )
   "Sends STRING to the cscope process.
 Using `with-current-buffer' set to `cscope-out-buffer', STRING is sent
 to `cscope-process'.  Then `cscope-wait' and `cscope-format' are
 called."
-  (with-current-buffer (get-cscope-out-buffer)
+  (with-current-buffer (cscope-get-or-create-out-buffer)
     (setq buffer-read-only nil)
     (erase-buffer)
-    (send-string cscope-process string)
+    (send-string (cscope-process-get) string)
     (cscope-wait)
     (cscope-format)
     (setq buffer-read-only t)))
@@ -529,9 +571,11 @@ called."
   "Calls `cscope-send-string' with STRING and then displays what the
 user wants to see"
   (cscope-send-string string)
-  (if (and (= (length cscope-file-vector) 1) cscope-auto-go)
-      (cscope-goto-from-list nil)
-    (pop-to-buffer (get-cscope-out-buffer))))
+  (if (and (= (length (cscope-file-vector-get)) 1) cscope-auto-go)
+      (progn
+	(set-buffer (cscope-out-buffer-get))
+	(cscope-goto-from-list nil))
+    (pop-to-buffer (cscope-out-buffer-get))))
 
 (defun cscope-mouse-no-op ( click )
   "Function which does nothing"
@@ -540,7 +584,7 @@ user wants to see"
 (defun cscope-get-line-number ()
   "Returns the \"line number\" out of a cscope output buffer"
   (end-of-line)
-  (re-search-backward "^[ 0-9][ 0-9][0-9]")
+  (re-search-backward "^[ 0-9][ 0-9][0-9]+")
   (1- (string-to-number (buffer-substring (match-beginning 0) (match-end 0)))))
 
 (defun cscope-view-from-list ()
@@ -549,8 +593,8 @@ cscope-list-line. This routine plops into the file at the appropriate
 spot"
   (interactive)
   (let* ((num (cscope-get-line-number))
-	 (fname (expand-file-name (aref cscope-file-vector num)))
-	 (lnum (aref cscope-line-vector num)))
+	 (fname (expand-file-name (aref (cscope-file-vector-get) num)))
+	 (lnum (aref (cscope-line-vector-get) num)))
     (find-file fname)
     (goto-char (point-min))
     (forward-line (1- lnum))
@@ -562,12 +606,11 @@ cscope-list-line. This routine plops into the file at the appropriate
 spot"
   (interactive "P")
   (let* ((num (cscope-get-line-number))
-	 (fname (expand-file-name (aref cscope-file-vector num)))
-	 (lnum (aref cscope-line-vector num)))
+	 (fname (expand-file-name (aref (cscope-file-vector-get) num)))
+	 (lnum (aref (cscope-line-vector-get) num)))
     (if arg
 	(find-file-other-window fname)
       (find-file fname))
-    (message (buffer-name))
     (goto-char (point-min))
     (forward-line (1- lnum))))
 
