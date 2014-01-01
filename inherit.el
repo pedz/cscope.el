@@ -25,15 +25,15 @@ mode changes and kill-all-local-variables"
 		    (cons v (symbol-value v)))
 		  inherited-variables))
     (set-buffer curbuf)
-    (mapcar (lambda ( c )
-	      (set (car c) (cdr c)))
-	    set-list)))
+    (mapc (lambda ( c )
+	    (set (car c) (cdr c)))
+	  set-list)))
 
 ;;;###autoload
 (defun kill-inherited-variables ()
   "Sets all inherited variables to nil"
   (interactive)
-  (mapcar (lambda ( v ) (kill-local-variable v)) inherited-variables))
+  (mapc (lambda ( v ) (kill-local-variable v)) inherited-variables))
 
 (defadvice get-buffer-create (around inherit activate)
   "Propogates the inherited variables from the current buffer to the
@@ -44,8 +44,8 @@ mode changes and kill-all-local-variables"
     ad-do-it
     (if (buffer-name ad-return-value)
 	(with-current-buffer ad-return-value
-	  (mapcar (lambda ( c )
-		    (set (car c) (cdr c)))
-		  set-list)))))
+	  (mapc (lambda ( c )
+		  (set (car c) (cdr c)))
+		set-list)))))
 
 (provide 'inherit)
