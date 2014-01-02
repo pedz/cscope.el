@@ -69,6 +69,10 @@
   "CScope mode"
   :group 'languages)
 
+;; ToDo: The first two patterns need to be removed and put into a
+;; separate GSA cscope project along with a method of finding the
+;; various backing trees on GSA and creating convenience functions to
+;; starting a cscope for a specific backing tree or release.
 (defcustom cscope-dir-patterns
   (list
    ;; Pattern to match files found in backing trees
@@ -347,6 +351,13 @@ start the cscope process.  If no match is found in
 	       (eval (nth 2 temp))
 	       (eval (nth 3 temp))
 	       (eval (nth 4 temp))))
+	  ;; ToDo: Currently, the only way to start cscope is to open
+	  ;; a source file and then search for a symbol.  The code
+	  ;; will automatically find the cscope database or hit this
+	  ;; error if it can't figure it out.  Convenience functions
+	  ;; need to be created so a user can start a cscope
+	  ;; anywhere and with a user's selected set of cscope,
+	  ;; options, directory, and database.
 	  (error "`cscope-dir-patters' did not match current directory"))))
   (cscope-out-buffer-get))
 
@@ -395,6 +406,9 @@ created."
 			 database))))
 
     ;; Kill current process if the cscope.out file has been modified.
+    ;; De Morgan's equivalent to:
+    ;; if process exists AND it is not dead AND the modification time
+    ;;    do not match, then
     (unless (or (not process)
 		dead-process
 		(equal (cscope-process-start-time-get) file-mod-time))
@@ -528,6 +542,33 @@ being called."
 	(put-text-property (save-excursion (beginning-of-line) (point))
 			   (point)
 			   'mouse-face 'highlight)
+
+	;;
+	;; ToDo: I want to make the five columns elastic.  When the
+	;; window is too narrow, only a part of each column is
+	;; displayed with the rest being invisible.  A help key would
+	;; be added so if the user mouses over a field, the full name
+	;; would appear as the tool tip.  As the window is made wider,
+	;; the rightmost column would expand first.  Once it was fully
+	;; expanded, then the other columns would grow until they were
+	;; fully expanded.  When all are fully expanded, the excess
+	;; white space would be left on the right margin as usual.
+	;;
+	;; I think if the number of results is greater than a preset
+	;; limit, this would not be done or perhaps done "lazily".
+	;;
+	;; All this is possible and is actually more practical than it
+	;; seems.  With long function names and file names, the
+	;; results are wider than the current window and some type of
+	;; compressing of the columns is needed.
+	;;
+
+	;;
+	;; Preliminary version of striping the result for easier
+	;; visibility but it needs to be done with a face that adapts
+	;; to the background being used.  I'm also not sure I want to
+	;; start down this path.
+	;;
 	;; (if (= (mod counter 2) 0)
 	;;     (put-text-property (save-excursion (beginning-of-line) (point))
 	;; 		       (point)
@@ -645,7 +686,10 @@ spot"
   (goto-char (posn-point (event-start click)))
   (cscope-view-from-list))
 
-
+;; ToDo: I want to figure out how to use the mouse to pick the symbol
+;; to do the cscope search on.  By "figure out", I mean figure out
+;; which mouse events to hook in to which the users will find the most
+;; convenient.
 (defmacro cscope-define-function ( name symbol doc str prompt )
   "Define three functions for a particular CScope search.
 The nine search facilities that CScope provides need to be called
