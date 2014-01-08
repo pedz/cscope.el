@@ -75,38 +75,6 @@
 ;; starting a cscope for a specific backing tree or release.
 (defcustom cscope-dir-patterns
   (list
-   ;; Pattern to match files found in backing trees
-   '("^\\(/gsa/.*/aix\\(53\\|61\\|71\\)./\\)[^/]*/"
-     (concat (match-string 1 default-directory) "cscope/bin/cscope") ; which cscope to use
-     "-d -q -l"							     ; options to pass
-     (match-string 0 default-directory)				     ; to level dir
-     (concat (match-string 1 default-directory) "cscope/mono.db"))   ; cscope database
-
-   ;; Pattern to match files found in a sandbox
-   '("/gsa/.*/pedzan/sb/[^/]+/"
-     (concat
-      (file-name-as-directory			;add /
-       (directory-file-name			;move up to parent
-	(file-name-directory			;remove any /
-	 (file-truename				;walk sym links
-	  (concat				;append "link" to get to backing tree
-	   (file-name-as-directory		;add / if needed
-	    (match-string 0 default-directory)) ;path to sandbox
-	   "link")))))
-      "cscope/bin/cscope")			;which cscope to use
-     "-d -q -l"					;options to pass to cscope
-     (match-string 0 default-directory)
-     (concat					;append cscope/mono.db
-      (file-name-as-directory			;add /
-       (directory-file-name			;move up to parent
-	(file-name-directory			;remove any /
-	 (file-truename				;walk sym links
-	  (concat				;append "link"
-	   (file-name-as-directory		;add / if needed
-	    (match-string 0 default-directory)) ;path to sandbox
-	   "link")))))
-      "cscope/mono.db"))
-
    ;; Pattern that always matches
    '("."
      "cscope"
@@ -1736,3 +1704,5 @@ location of the point."
 ;; (defalias 'cscope-7100-02-03 'cscope-71J-process)
 
 (provide 'cscope)
+
+;;; end of cscope.el
