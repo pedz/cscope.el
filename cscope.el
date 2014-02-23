@@ -421,6 +421,7 @@ created."
 	    ;; Now, go into cscope-result-mode
 	    (cscope-result-mode))))))
 
+;;;###autoload
 (define-minor-mode cscope-mode
   "Minor mode for C files that use cscope
 
