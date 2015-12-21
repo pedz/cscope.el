@@ -305,14 +305,17 @@ If `cscope-needs-to-be-started', then a new cscope process is kicked
 off using `cscope-dir-patterns' to determine the values to use to
 start the cscope process.  If no match is found in
 `cscope-dir-patterns', an error is signaled."
+  (message "cscope-get-or-create-out-buffer")
   (if (cscope-needs-to-be-started)
       (let ((var cscope-dir-patterns)
 	    temp)
+	(message "cscope-get-or-create-out-buffer1")
 	(while (not (or (null var)
 			(string-match (nth 0 (nth 0 var)) default-directory)))
 	  (setq var (cdr var)))
 	(if var
 	    (progn
+	      (message "cscope-get-or-create-out-buffer2 %s" var)
 	      (setq temp (car var))
 	      (cscope-init-process
 	       (eval (nth 1 temp))
@@ -356,8 +359,8 @@ process will be what `cscope-buffer-name' returns when passed the same
 four args passed to this function.  If the buffer already exists and
 if the process is still running, a new buffer and new process is not
 created."
-  ;; (message "cscope-init-process called: cscope='%s' options='%s' dir='%s' database='%s'"
-  ;; 	   cscope options dir database)
+  (message "cscope-init-process called: cscope='%s' options='%s' dir='%s' database='%s'"
+   	   cscope options dir database)
   (setq dir (expand-file-name dir)
 	database (expand-file-name database))
   (let* ((buf (cscope-get-buffer-create (cscope-buffer-name cscope options dir database)))
@@ -380,7 +383,12 @@ created."
     (unless (or (not process)
 		dead-process
 		(equal (cscope-process-start-time-get) file-mod-time))
-      (message "Killing cscope process")
+      (message "Killing cscope process %s %s %s %s %s"
+	       (not process)
+	       dead-process
+	       (equal (cscope-process-start-time-get) file-mod-time)
+	       (cscope-process-start-time-get)
+	       file-mod-time)
       (kill-process process)
       (with-current-buffer buf
 	(setq buffer-read-only nil)
@@ -388,11 +396,12 @@ created."
       (setq dead-process t))
 
     ;; If process is nil or dead, we need to start the process.
+    (message "dead-process is %s" dead-process)
     (if dead-process
 	(progn
 	  (if process
-	      (message "Restarting dead cscope-process...")
-	    (message "Starting new cscope process..."))
+	      (message "Restarting dead cscope-process... %s %s" cscope options-list)
+	    (message "Starting new cscope process... %s %s" cscope options-list))
 	  (set-process-query-on-exit-flag
 	   (setq process (apply 'start-process "cscope" buf
 				cscope
@@ -402,6 +411,7 @@ created."
 	  ;; within the new buffer.  Note that cscope-out-buffer in
 	  ;; buf points to itself (the new buffer)
 	  (cscope-out-buffer-set buf)
+	  (message "setting process to %d" (process-id process))
 	  (cscope-process-set process)
 	  (cscope-process-cscope-set cscope)
 	  (cscope-process-options-set options)
@@ -591,7 +601,9 @@ called."
   (with-current-buffer (cscope-get-or-create-out-buffer)
     (setq buffer-read-only nil)
     (erase-buffer)
-    (send-string (cscope-process-get) string)
+    ;; (message "cscope-process-get is process id %d but it should be %d"
+    ;; 	     (process-id (cscope-process-get)) (process-id (get-buffer-process (current-buffer))))
+    (send-string (get-buffer-process (current-buffer)) string)
     (cscope-wait)
     (cscope-format)
     (setq buffer-read-only t)))
@@ -708,6 +720,14 @@ location of the point."
 	 ,menu-doc
 	 (interactive)
 	 (cscope-send-and-select (concat ,str (get-symbol-non-interactively) "\n"))))))
+
+(defun cscope-start-new ( cscope options dir database )
+  (interactive "fPath to cscope executable: \nsOptions to pass (usually -d -q -l): \nDBase Directory for cscope DB: \nfPath to cscope db: ")
+  (message "cscope is %s" cscope)
+  (message "options are %s" options)
+  (message "dir is %s" dir)
+  (message "database is %s" database)
+  (cscope-init-process cscope options dir database))
 
 (cscope-define-function
   find-references symbol
