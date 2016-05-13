@@ -315,8 +315,12 @@ start the cscope process.  If no match is found in
 	  (setq var (cdr var)))
 	(if var
 	    (progn
-	      (message "cscope-get-or-create-out-buffer2 %s" var)
 	      (setq temp (car var))
+	      (message "cscope-get-or-create-out-buffer2 %s %s %s %s"
+		       (eval (nth 1 temp))
+		       (eval (nth 2 temp))
+		       (eval (nth 3 temp))
+		       (eval (nth 4 temp)))
 	      (cscope-init-process
 	       (eval (nth 1 temp))
 	       (eval (nth 2 temp))
@@ -586,13 +590,15 @@ being called."
   "Waits for the cscope process to finish and print the \">> \" prompt."
   (let ((process (cscope-process-get)))
     (with-current-buffer (cscope-out-buffer-get)
+      (message "here")
       (while (and (or (eq (process-status process) 'run)
 		      (eq (process-status process) 'signal))
 		  (progn
 		    (goto-char (point-max))
+		    (message "blah %d" (point))
 		    (beginning-of-line)
 		    (not (looking-at ">> "))))
-	(accept-process-output process)))))
+	(accept-process-output process 1)))))
 
 (defun cscope-send-string ( string )
   "Sends STRING to the cscope process.
