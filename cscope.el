@@ -586,7 +586,8 @@ being called."
   "Waits for the cscope process to finish and print the \">> \" prompt."
   (let ((process (cscope-process-get)))
     (with-current-buffer (cscope-out-buffer-get)
-      (while (and (eq (process-status process) 'run)
+      (while (and (or (eq (process-status process) 'run)
+		      (eq (process-status process) 'signal))
 		  (progn
 		    (goto-char (point-max))
 		    (beginning-of-line)
