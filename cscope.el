@@ -595,7 +595,6 @@ being called."
 		      (eq (process-status process) 'signal))
 		  (progn
 		    (goto-char (point-max))
-		    (message "blah %d" (point))
 		    (beginning-of-line)
 		    (not (looking-at ">> "))))
 	(accept-process-output process 1)))))
