@@ -5,22 +5,22 @@
 ;;;; to amend these functions with a way to modify the syntax table
 ;;;; temporarily so that the defaults could be better controlled.
 
-(require 'etags)
+(require 'c-syntax)
 
 ;;;###autoload
-(defun get-symbol-interactively ( prompt )
+(defun get-symbol-interactively ( prompt &optional history )
   "Used by cscope and others to get a symbol in a tags style interface
 and allow for interactive confirmation or changes"
-  (let ((current-prefix-arg nil))
-    (list (find-tag-tag prompt))))
+  (let* ((def (thing-at-point 'c-identifier t))
+	 (p (if def
+		(concat prompt (format "(default %s) " def)))))
+    (list (read-string p nil history def))))
 
 ;;;###autoload
 (defun get-symbol-non-interactively ()
   "Used by cscope and others to get a symbol under the cursor.  Uses
 the same mechanism for the default as get-symbol-interactively"
-  (funcall (or find-tag-default-function
-	       (get major-mode 'find-tag-default-function)
-	       'find-tag-default)))
+  (thing-at-point 'c-identifier t))
 
 ;;;###autoload
 (defun x-find-tag ( click )
