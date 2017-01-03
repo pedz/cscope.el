@@ -55,7 +55,6 @@ after the first character"
 
 (defun c-identifier-bounds ()
   "True if point is immediately before or within a C identifier"
-  (message "here!")
   (if (looking-at (concat "[" c-identifier-non-first-character "]"))
       (save-match-data
 	(save-excursion

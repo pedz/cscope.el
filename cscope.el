@@ -107,6 +107,11 @@ entry"
   :type 'string
   :group 'cscope-mode)
 
+(defcustom cscope-mark-ring-max 16
+  "Number of markers to keep in `cscope-mark-ring'"
+  :type 'integer
+  :group 'cscope-mode)
+
 ;; We define one inhertied variable which is an obarray that will
 ;; contain the half dozen or so variables needed to drive cscope.
 (defvar cscope-obarray nil
@@ -161,12 +166,14 @@ entry"
 	["Find assignments ..." cscope-find-assignment 
 	 :help "Find assignments to SYMBOL interactively"]
 	))
-    (define-key parent cscope-key-command-prefix child)
     (define-key child (kbd "F") 'cscope-find-file)
     (define-key child (kbd "c") 'cscope-find-calling-functions)
     (define-key child (kbd "f") 'cscope-find-declarations)
     (define-key child (kbd "i") 'cscope-find-file-include)
+    (define-key child (kbd "n") 'cscope-next-mark)
+    (define-key child (kbd "p") 'cscope-previous-mark)
     (define-key child (kbd "s") 'cscope-find-references)
+    (define-key parent cscope-key-command-prefix child)
     parent)
   "Keymap used for cscope mode")
 
@@ -261,8 +268,22 @@ the cscope process was started.")
 (cscope-defvar cscope-line-vector nil
   "Holds the line numbers for the lines listed in the cscope output")
 
-(cscope-defvar cscope-history ()
+(cscope-defvar cscope-history nil
   "Holds the history of the searches made for this cscope")
+
+(cscope-defvar cscope-mark-ring nil
+  "Ring of locations much like `global-mark-ring' to help
+navigate back to previous places in your cscope editing
+history.")
+
+(cscope-defvar cscope-mark-nth -1
+  "Current index into `cscope-mark-ring'.  `cscope-previous-mark'
+goes to the mark at `cscope-mark-nth' position and then
+increments it by one.  `cscope-next-mark' decrements it by one
+and then goes to the marker.  The list does not wrap.
+`cscope-previous-mark' will error if `cscope-mark-nth' is past
+the end of the list.  `cscope-next-mark' will error if
+`cscope-mark-nth' is already at the front of the list.")
 
 (defun cscope-needs-to-be-started ()
   "Returns true if the cscope has never been started, has died and
@@ -308,18 +329,16 @@ If `cscope-needs-to-be-started', then a new cscope process is kicked
 off using `cscope-dir-patterns' to determine the values to use to
 start the cscope process.  If no match is found in
 `cscope-dir-patterns', an error is signaled."
-  (message "cscope-get-or-create-out-buffer")
   (if (cscope-needs-to-be-started)
       (let ((var cscope-dir-patterns)
 	    temp)
-	(message "cscope-get-or-create-out-buffer1")
 	(while (not (or (null var)
 			(string-match (nth 0 (nth 0 var)) default-directory)))
 	  (setq var (cdr var)))
 	(if var
 	    (progn
 	      (setq temp (car var))
-	      (message "cscope-get-or-create-out-buffer2 %s %s %s %s"
+	      (message "cscope-get-or-create-out-buffer %s %s %s %s"
 		       (eval (nth 1 temp))
 		       (eval (nth 2 temp))
 		       (eval (nth 3 temp))
@@ -609,8 +628,6 @@ called."
   (with-current-buffer (cscope-get-or-create-out-buffer)
     (setq buffer-read-only nil)
     (erase-buffer)
-    ;; (message "cscope-process-get is process id %d but it should be %d"
-    ;; 	     (process-id (cscope-process-get)) (process-id (get-buffer-process (current-buffer))))
     (send-string (get-buffer-process (current-buffer)) string)
     (cscope-wait)
     (cscope-format)
@@ -620,6 +637,7 @@ called."
   "Calls `cscope-send-string' with STRING and then displays what the
 user wants to see"
   (cscope-send-string string)
+  (cscope-push-mark)
   (if (and (= (length (cscope-file-vector-get)) 1) cscope-auto-go)
       (progn
 	(set-buffer (cscope-out-buffer-get))
@@ -675,6 +693,89 @@ spot"
   (goto-char (posn-point (event-start click)))
   (cscope-view-from-list))
 
+(defun cscope-push-mark ()
+  "Pushes a mark on to the `cscope-mark-ring'"
+  (cscope-mark-nth-set -1)
+  (let ((this-mark (set-marker (make-marker) (point) (current-buffer))))
+    (cscope-mark-ring-set (cons this-mark (cscope-mark-ring-get))))
+  (when (> (length (cscope-mark-ring-get)) cscope-mark-ring-max)
+    (move-marker (car (nthcdr cscope-mark-ring-max (cscope-mark-ring-get))) nil)
+    (setcdr (nthcdr (1- cscope-mark-ring-max) (cscope-mark-ring-get)) nil)))
+
+(defun cscope-start-new ( cscope options dir database )
+  "Start a new cscope session using the executable specified by CSCOPE
+with OPTIONS.  DIR specifies the base directory for the source.
+  DATABASE specifies the path to the cscope database (e.g. cscope.out)"
+  (interactive (concat "fPath to cscope executable: \n" 
+		       "sOptions to pass (usually -d -q -l): \n"
+		       "DBase Directory for cscope DB: \n"
+		       "fPath to cscope db: "))
+  (cscope-init-process cscope options dir database))
+
+(defun cscope-goto-mark ( mark )
+  "Displays the buffer and position specified by MARK.  If the
+position is before `point-min' (i.e. the buffer has been
+narrorwed), then point is put at `point-min'.  Likewise if
+position points past `point-max', the point is put at
+`point-max'."
+  (let ((buffer (marker-buffer mark))
+	(position (marker-position mark)))
+    (switch-to-buffer buffer)
+    (goto-char (or (and (< position (point-min))
+			(point-min))
+		   (and (> position (point-max))
+			(point-max))
+		   position))))
+
+(defun cscope-sanitize-mark-ring ()
+  "Removes markers from `cscope-mark-ring' whose buffers have been
+deleted. Called from `cscope-previous-mark' and `cscope-next-mark'."
+  (let ((temp (cscope-mark-ring-get))
+	(head nil)
+	(last nil)
+	marker)
+    (while temp
+      (if (marker-buffer (setq marker (car temp)))
+	  (progn
+	    (setq head (or head temp))
+	    (setq temp (cdr (setq last temp))))
+	(set-marker marker nil)		;probably not needed
+	(if last
+	    (setcdr last (setq temp (cdr temp)))
+	  (setq temp (cdr temp)))))
+    (cscope-mark-ring-set head)))
+
+;; I'd rather call these cscope-back-mark and cscope-formward-mark and
+;; bind them to b and f but both f and F are already bound.
+(defun cscope-previous-mark ()
+  "On the first call, goes to the most recent marker in the
+`cscope-mark-ring'.  This is the buffer and position when the
+last cscope command such as `cscope-find-references' was
+executed.  Subsequent calls move further back in the history.
+And error is raised if already past the end of the list.
+`cscope-next-mark' moves forward in the history."
+  (interactive)
+  (cscope-sanitize-mark-ring)
+  (let ((the-mark (nth (cscope-mark-nth-set (1+ (cscope-mark-nth-get)))
+		       (cscope-mark-ring-get))))
+    (if (and (null the-mark)
+	     (cscope-mark-nth-set (length (cscope-mark-ring-get))))
+	(error "Past end of `cscope-mark-ring'")
+      
+      (cscope-goto-mark the-mark))))
+
+(defun cscope-next-mark ()
+  "Moves forward (more recent) in `cscope-mark-ring' and displays the
+buffer and position specified.  `cscope-previous-mark' moves backward
+further in the past.  An error is raised if already at the
+front of the list."
+  (interactive)
+  (cscope-sanitize-mark-ring)
+  (if (= (cscope-mark-nth-get) 0)
+      (error "Already at the front of `cscope-mark-ring'")
+    (cscope-goto-mark (nth (cscope-mark-nth-set (1- (cscope-mark-nth-get)))
+			   (cscope-mark-ring-get)))))
+  
 ;; ToDo: I want to figure out how to use the mouse to pick the symbol
 ;; to do the cscope search on.  By "figure out", I mean figure out
 ;; which mouse events to hook in to which the users will find the most
@@ -717,7 +818,7 @@ location of the point."
     `(progn
        (defun ,kbd-name ( ,symbol )
 	 ,kbd-doc
-	 (interactive (get-symbol-interactively ,prompt 'cscope-history))
+	 (interactive (get-symbol-interactively ,prompt (cscope-history-sym)))
 	 (cscope-send-and-select (concat ,str ,symbol "\n")))
        (defun ,mouse-name ( click )
 	 ,mouse-doc
@@ -728,14 +829,6 @@ location of the point."
 	 ,menu-doc
 	 (interactive)
 	 (cscope-send-and-select (concat ,str (get-symbol-non-interactively) "\n"))))))
-
-(defun cscope-start-new ( cscope options dir database )
-  (interactive "fPath to cscope executable: \nsOptions to pass (usually -d -q -l): \nDBase Directory for cscope DB: \nfPath to cscope db: ")
-  (message "cscope is %s" cscope)
-  (message "options are %s" options)
-  (message "dir is %s" dir)
-  (message "database is %s" database)
-  (cscope-init-process cscope options dir database))
 
 (cscope-define-function
   find-references symbol
