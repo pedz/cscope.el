@@ -285,6 +285,24 @@ and then goes to the marker.  The list does not wrap.
 the end of the list.  `cscope-next-mark' will error if
 `cscope-mark-nth' is already at the front of the list.")
 
+(cscope-defvar cscope-flush-patterns nil
+  "Can be set to a list of regular expressions.  `cscope-format' will
+delete lines (cscope hits) that match any of the patterns before
+making the final list of cscope hits.")
+
+(defun cscope-clear-flush-patterns ()
+  "Sets `cscope-flush-patterns' to nil"
+  (interactive)
+  (cscope-flush-patterns-set nil))
+
+(defun cscope-append-flush-patterns ( patterns )
+  "Appends PATTERNS to `cscope-flush-patterns'.  PATTERNS may be a
+  single string or a list of strings"
+  (interactive "sRegexp string: ")
+  (cscope-flush-patterns-set (append (cscope-flush-patterns-get)
+				     (or (and (listp patterns) patterns)
+					 (list patterns)))))
+
 (defun cscope-needs-to-be-started ()
   "Returns true if the cscope has never been started, has died and
   needs to be restarted, or if the database has been updated implying
@@ -480,6 +498,7 @@ being called."
 	(longest-function 0)
 	(longest-line 0)
 	(counter 0)
+	(flush-patterns (cscope-flush-patterns-get))
 	pat return-value)
 
     ;; delete the ">> " last line
@@ -496,6 +515,12 @@ being called."
 		   (save-excursion
 		     (forward-line 1)
 		     (point)))
+
+    ;; flush the lines that the user doesn't want to see.
+    (dolist (pattern flush-patterns)
+      (flush-lines pattern)
+      (goto-char (point-min)))
+
     ;;
     ;; Go through buffer finding the longest filename, function name,
     ;; and line number.
