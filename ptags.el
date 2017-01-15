@@ -13,7 +13,8 @@
 and allow for interactive confirmation or changes"
   (let* ((def (thing-at-point 'c-identifier t))
 	 (p (if def
-		(concat prompt (format "(default %s) " def)))))
+		(concat prompt (format "(default %s) " def))
+	      prompt)))
     (list (read-string p nil history def))))
 
 ;;;###autoload
@@ -21,14 +22,5 @@ and allow for interactive confirmation or changes"
   "Used by cscope and others to get a symbol under the cursor.  Uses
 the same mechanism for the default as get-symbol-interactively"
   (thing-at-point 'c-identifier t))
-
-;;;###autoload
-(defun x-find-tag ( click )
-  "Find function via TAGS that mouse is pointing at"
-  (interactive "@e")
-  (goto-char (posn-point (event-start click)))
-  (find-tag (get-symbol-non-interactively)))
-
-;; (global-set-key [C-S-mouse-3] 'x-find-tag)
 
 (provide 'ptags)
